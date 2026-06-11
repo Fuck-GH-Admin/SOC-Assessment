@@ -55,11 +55,13 @@ async function saveToFilesystem(blob, filename) {
   } catch { return null }
 }
 
-function canvasToImage(canvas) {
-  if (!canvas) return null
-  if (canvas.width === 0 || canvas.height === 0) return null
-  try { return canvas.toDataURL('image/png') }
-  catch { return null }
+function chartToImage(chart) {
+  if (!chart) return null
+  try {
+    const img = chart.toBase64Image('image/png', 2)
+    if (!img || img.length < 200) return null
+    return img
+  } catch { return null }
 }
 
 function drawTitle(doc, text, y) {
@@ -118,11 +120,11 @@ function drawTable(doc, rows, y) {
   return y + 2
 }
 
-function drawChartImage(doc, canvas, y, maxW) {
-  const img = canvasToImage(canvas)
+function drawChartImage(doc, chart, y, maxW) {
+  const img = chartToImage(chart)
   if (!img) return y
-  const cw = canvas.width || 600
-  const ch = canvas.height || 300
+  const cw = chart.canvas?.width || chart.width || 600
+  const ch = chart.canvas?.height || chart.height || 300
   const pdfW = maxW || 180
   const pdfH = (ch / cw) * pdfW
   if (y + pdfH > 280) { doc.addPage(); y = 20 }
@@ -146,10 +148,10 @@ export function usePDF() {
       y += 8
 
       y = drawSection(doc, '输入参数', y)
-      const fertLabel = inputs.fert === 'F' ? '施肥' : (inputs.fert === 'UNF' ? '不施肥' : inputs.fert || '')
+      const fl = inputs.fert === 'F' ? '施肥' : (inputs.fert === 'UNF' ? '不施肥' : String(inputs.fert || ''))
       y = drawTable(doc, [
         ['参数', '值', '说明'],
-        ['施肥处理', fertLabel, inputs.fert === 'F' ? '施氮肥' : '对照'],
+        ['施肥处理', fl, inputs.fert === 'F' ? '施氮肥' : '对照'],
         ['侵蚀强度', String(inputs.erosion || 0) + ' cm', '土壤侵蚀深度'],
         ['土层深度', String(inputs.depth || 0), 'cm'],
         ['土壤容重', String(inputs.bd ?? '-'), 'g/cm³'],
@@ -189,8 +191,8 @@ export function usePDF() {
 
       if (charts?.length) {
         y = drawSection(doc, '数据图表', y)
-        for (const canvas of charts) {
-          y = drawChartImage(doc, canvas, y, 180)
+        for (const chart of charts) {
+          y = drawChartImage(doc, chart, y, 180)
         }
       }
 

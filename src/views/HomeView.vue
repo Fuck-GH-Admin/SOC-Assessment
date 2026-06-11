@@ -593,21 +593,21 @@ const heatmapValuePlugin = {
     if (!showHeatmapValues.value) return
     const cty = chart.ctx
     const ds = chart.data.datasets[0]
-    const meta = chart.getDatasetMeta(0)
-    if (!meta?.data || !ds?.data) return
+    if (!ds?.data) return
+    const xScale = chart.scales.x
+    const yScale = chart.scales.y
+    if (!xScale || !yScale) return
     cty.save()
     cty.font = 'bold 9px sans-serif'
     cty.fillStyle = '#fff'
     cty.textAlign = 'center'
     cty.textBaseline = 'middle'
-    meta.data.forEach((el, i) => {
-      const raw = ds.data[i]
-      const v = raw?.v
-      if (v != null && isFinite(v) && el.width && el.height) {
-        const cx = el.x + el.width / 2
-        const cy = el.y + el.height / 2
-        cty.fillText(String(Math.round(v * 10) / 10) + 'g/kg', cx, cy)
-      }
+    ds.data.forEach(d => {
+      const v = d?.v
+      if (v == null || !isFinite(v)) return
+      const cx = xScale.getPixelForValue(d.x)
+      const cy = yScale.getPixelForValue(d.y)
+      cty.fillText(String(Math.round(v * 10) / 10) + 'g/kg', cx, cy)
     })
     cty.restore()
   }
@@ -725,43 +725,37 @@ function sanitize(v) {
   return v
 }
 
-async function handleExportPDF() {
-  if (pdfExporting.value || !store.results) return
-  try {
-    const chartCanvases = [
-      erosionCanvas.value, depthCanvas.value, timeCanvas.value,
-      radarCanvas.value, pieCanvas.value, scatterCanvas.value,
-      stackedCanvas.value, heatmapCanvas.value
-    ].filter(Boolean)
-
-    const result = await exportReport({
-      inputs: {
-        fert: store.inputs.fert,
-        erosion: store.inputs.erosion,
-        depth: store.inputs.depth,
-        bd: store.inputs.bd,
-        ph: store.inputs.ph,
-        wc: store.inputs.wc,
-        clay: store.inputs.clay,
-        tn: store.inputs.tn,
-        cropBiomass: store.inputs.cropBiomass,
-        strawCarbonRatio: store.inputs.strawCarbonRatio
-      },
-      results: store.results,
-      resilience: store.resilience,
-      aiReport: aiReport.value,
-      charts: chartCanvases
-    })
-    if (result?.method === 'filesystem') {
-      alert('PDF已保存到: ' + (result.path || 'Documents'))
-    } else {
-      const isM = /android|ios/i.test(navigator.userAgent)
-      alert(isM ? 'PDF已导出，请在通知栏或下载目录查看' : 'PDF已导出到下载目录')
+  async function handleExportPDF() {
+    if (pdfExporting.value || !store.results) return
+    try {
+      const result = await exportReport({
+        inputs: {
+          fert: store.inputs.fert,
+          erosion: store.inputs.erosion,
+          depth: store.inputs.depth,
+          bd: store.inputs.bd,
+          ph: store.inputs.ph,
+          wc: store.inputs.wc,
+          clay: store.inputs.clay,
+          tn: store.inputs.tn,
+          cropBiomass: store.inputs.cropBiomass,
+          strawCarbonRatio: store.inputs.strawCarbonRatio
+        },
+        results: store.results,
+        resilience: store.resilience,
+        aiReport: aiReport.value,
+        charts
+      })
+      if (result?.method === 'filesystem') {
+        alert('PDF已保存到: ' + (result.path || 'Documents'))
+      } else {
+        const isM = /android|ios/i.test(navigator.userAgent)
+        alert(isM ? 'PDF已导出，请在通知栏或下载目录查看' : 'PDF已导出到下载目录')
+      }
+    } catch (e) {
+      alert('PDF导出失败: ' + e.message)
     }
-  } catch (e) {
-    alert('PDF导出失败: ' + e.message)
   }
-}
 
 async function saveResult() {
   try {
