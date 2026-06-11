@@ -46,7 +46,7 @@ export const useHistoryStore = defineStore('history', () => {
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
     } catch (e) {
       console.error('导出失败:', e)
       alert('导出失败: ' + e.message)

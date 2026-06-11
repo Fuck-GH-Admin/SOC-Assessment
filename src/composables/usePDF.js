@@ -4,6 +4,33 @@ import jsPDF from 'jspdf'
 
 const exporting = ref(false)
 
+function isMobile() {
+  return typeof navigator !== 'undefined' && /android|ios/i.test(navigator.userAgent)
+}
+
+async function shareOrDownload(blob, filename, mimeType) {
+  if (isMobile() && navigator.share && navigator.canShare) {
+    const file = new File([blob], filename, { type: mimeType })
+    if (navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: filename })
+        return { method: 'share' }
+      } catch (e) {
+        if (e?.name === 'AbortError') return { method: 'cancelled' }
+      }
+    }
+  }
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return { method: 'download' }
+}
+
 export function usePDF() {
   async function exportPDF(element, filename) {
     exporting.value = true
@@ -26,21 +53,14 @@ export function usePDF() {
         y += pageH
       }
       const blob = pdf.output('blob')
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      const result = await shareOrDownload(blob, filename, 'application/pdf')
       exporting.value = false
-      return true
+      return result
     } catch (e) {
       exporting.value = false
       throw e
     }
   }
 
-  return { exportPDF, exporting }
+  return { exportPDF, exporting, shareOrDownload }
 }
