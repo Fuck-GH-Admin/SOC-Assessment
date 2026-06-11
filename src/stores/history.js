@@ -1,20 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import db from '@/db/index.js'
-
-function isAndroid() {
-  return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
-}
-
-async function shareFile(blob, filename, mime) {
-  const file = new File([blob], filename, { type: mime })
-  try {
-    await navigator.share({ files: [file] })
-    return true
-  } catch {
-    return false
-  }
-}
+import { exportBlob } from '@/utils/exportFile.js'
 
 export const useHistoryStore = defineStore('history', () => {
   const records = ref([])
@@ -53,29 +40,7 @@ export const useHistoryStore = defineStore('history', () => {
       const json = JSON.stringify(sanitized, null, 2)
       const filename = `soc-records-${new Date().toISOString().slice(0, 10)}.json`
       const blob = new Blob([json], { type: 'application/json' })
-
-      if (isAndroid()) {
-        const ok = await shareFile(blob, filename, 'application/json')
-        if (!ok) {
-          const url = URL.createObjectURL(blob)
-          const a = document.createElement('a')
-          a.href = url
-          a.download = filename
-          document.body.appendChild(a)
-          a.click()
-          document.body.removeChild(a)
-          setTimeout(() => URL.revokeObjectURL(url), 3000)
-        }
-      } else {
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        setTimeout(() => URL.revokeObjectURL(url), 3000)
-      }
+      await exportBlob(blob, filename, 'SOC历史数据')
     } catch (e) {
       alert('导出失败: ' + e.message)
     }

@@ -1,13 +1,10 @@
 import { ref } from 'vue'
 import jsPDF from 'jspdf'
+import { exportBlob } from '@/utils/exportFile.js'
 
 const exporting = ref(false)
 
 const HELVETICA = 'helvetica'
-
-function isAndroid() {
-  return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
-}
 
 function drawTitle(doc, text, y) {
   doc.setFont(HELVETICA, 'bold')
@@ -128,27 +125,6 @@ function buildPDF(inputs, results, resilience, aiReport) {
   return doc
 }
 
-async function shareFile(blob, filename, mime) {
-  const file = new File([blob], filename, { type: mime })
-  try {
-    await navigator.share({ files: [file] })
-    return true
-  } catch {
-    return false
-  }
-}
-
-function downloadAnchor(blob, filename) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 5000)
-}
-
 export function usePDF() {
   async function exportReport(data) {
     exporting.value = true
@@ -156,13 +132,7 @@ export function usePDF() {
       const doc = buildPDF(data.inputs, data.results, data.resilience, data.aiReport)
       const blob = doc.output('blob')
       const filename = `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`
-
-      if (isAndroid()) {
-        const ok = await shareFile(blob, filename, 'application/pdf')
-        if (!ok) downloadAnchor(blob, filename)
-      } else {
-        downloadAnchor(blob, filename)
-      }
+      await exportBlob(blob, filename, 'SOC评估报告')
       exporting.value = false
     } catch (e) {
       exporting.value = false
