@@ -742,7 +742,8 @@ function sanitize(v) {
         strawCarbon: String(store.inputs.strawCarbonRatio || '-'),
         results: store.results,
         resilience: store.resilience,
-        aiReport: aiReport.value
+        aiReport: aiReport.value,
+        charts
       })
     } catch (e) {
       alert('PDF导出失败: ' + e.message)
