@@ -587,6 +587,31 @@ function renderStackedChart() {
   charts.push(c)
 }
 
+let heatmapPluginId = 0
+
+const heatmapValuePlugin = {
+  id: 'heatmapValueLabels',
+  afterDraw(chart) {
+    if (!showHeatmapValues.value) return
+    const cty = chart.ctx
+    cty.save()
+    cty.font = 'bold 11px sans-serif'
+    cty.fillStyle = '#fff'
+    cty.textAlign = 'center'
+    cty.textBaseline = 'middle'
+    const meta = chart.getDatasetMeta(0)
+    if (meta && meta.data) {
+      meta.data.forEach(el => {
+        const v = el.$context?.raw?.v
+        if (v != null && isFinite(v)) {
+          cty.fillText(String(Math.round(v * 10) / 10), el.x, el.y)
+        }
+      })
+    }
+    cty.restore()
+  }
+}
+
 function heatmapColor(value, min, max) {
   if (max === min) return 'rgba(74,158,255,0.8)'
   const t = (value - min) / (max - min)
@@ -617,6 +642,7 @@ function renderHeatmapChart() {
   }))
   const c = new Chart(ctx, {
     type: 'matrix',
+    plugins: [heatmapValuePlugin],
     data: {
       datasets: [{
         label: 'SOC (g/kg)',
@@ -629,23 +655,7 @@ function renderHeatmapChart() {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      animation: {
-        onComplete: () => {
-          if (!showHeatmapValues.value) return
-          const cty = c.ctx
-          cty.save()
-          cty.font = 'bold 11px sans-serif'
-          cty.fillStyle = '#fff'
-          cty.textAlign = 'center'
-          cty.textBaseline = 'middle'
-          const meta = c.getDatasetMeta(0)
-          meta.data.forEach(el => {
-            const v = el.$context.raw?.v
-            if (v != null) cty.fillText(String(Math.round(v * 10) / 10), el.x, el.y)
-          })
-          cty.restore()
-        }
-      },
+      animation: false,
       plugins: {
         legend: false,
         title: { display: true, text: '侵蚀强度x土层深度 SOC分布热力图', font: { size: 14 } },
@@ -668,8 +678,7 @@ function renderHeatmapChart() {
 function toggleHeatmapValues() {
   showHeatmapValues.value = !showHeatmapValues.value
   const idx = charts.findIndex(c => c.config.type === 'matrix')
-  if (idx >= 0) { charts[idx].destroy(); charts.splice(idx, 1) }
-  renderHeatmapChart()
+  if (idx >= 0) { charts[idx].update('none') }
 }
 
 function normalize(value, min, max) {
@@ -712,9 +721,12 @@ function sanitize(v) {
 async function handleExportPDF() {
   if (pdfExporting.value || !pdfArea.value) return
   try {
-    await exportPDF(pdfArea.value, `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`)
+    const result = await exportPDF(pdfArea.value, `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`)
+    if (result?.method === 'download') {
+      alert('PDF已导出到下载目录')
+    }
   } catch (e) {
-    alert('❌ PDF导出失败: ' + e.message)
+    alert('PDF导出失败: ' + e.message)
   }
 }
 

@@ -40,6 +40,7 @@
     "@capacitor/android": "^8.4.0",
     "@capacitor/cli": "^8.4.0",
     "@capacitor/core": "^8.4.0",
+    "@capacitor/share": "^8.0.1",
     "@vueuse/core": "^14.3.0",
     "chart.js": "^4.5.1",
     "chartjs-chart-matrix": "^3.0.4",
