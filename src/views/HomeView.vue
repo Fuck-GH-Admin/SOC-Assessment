@@ -730,6 +730,15 @@ function sanitize(v) {
   async function handleExportPDF() {
     if (pdfExporting.value || !store.results) return
     try {
+      const current = activeTab.value
+      for (const t of chartTabs) {
+        activeTab.value = t.id
+        await nextTick()
+        await new Promise(r => setTimeout(r, 100))
+      }
+      activeTab.value = current
+      await nextTick()
+
       await exportReport({
         fert: store.inputs.fert === 'F' ? '施肥' : (store.inputs.fert === 'UNF' ? '不施肥' : String(store.inputs.fert)),
         erosion: String(store.inputs.erosion || '0'),
