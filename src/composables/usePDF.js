@@ -17,9 +17,13 @@ async function loadFont() {
   if (!resp.ok) throw new Error('Font load failed: ' + resp.status)
   const buf = await resp.arrayBuffer()
   const bytes = new Uint8Array(buf)
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-  fontBase64 = btoa(binary)
+  const chunks = []
+  const CHUNK = 0x2000
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    const slice = bytes.subarray(i, i + CHUNK)
+    chunks.push(String.fromCharCode.apply(null, slice))
+  }
+  fontBase64 = btoa(chunks.join(''))
   fontReady = true
 }
 
