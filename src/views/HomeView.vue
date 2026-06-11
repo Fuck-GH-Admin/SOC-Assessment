@@ -587,27 +587,26 @@ function renderStackedChart() {
   charts.push(c)
 }
 
-let heatmapPluginId = 0
-
 const heatmapValuePlugin = {
   id: 'heatmapValueLabels',
   afterDraw(chart) {
     if (!showHeatmapValues.value) return
     const cty = chart.ctx
+    const ds = chart.data.datasets[0]
+    const meta = chart.getDatasetMeta(0)
+    if (!meta?.data || !ds?.data) return
     cty.save()
     cty.font = 'bold 11px sans-serif'
     cty.fillStyle = '#fff'
     cty.textAlign = 'center'
     cty.textBaseline = 'middle'
-    const meta = chart.getDatasetMeta(0)
-    if (meta && meta.data) {
-      meta.data.forEach(el => {
-        const v = el.$context?.raw?.v
-        if (v != null && isFinite(v)) {
-          cty.fillText(String(Math.round(v * 10) / 10), el.x, el.y)
-        }
-      })
-    }
+    meta.data.forEach((el, i) => {
+      const raw = ds.data[i]
+      const v = raw?.v
+      if (v != null && isFinite(v)) {
+        cty.fillText(String(Math.round(v * 10) / 10), el.x, el.y)
+      }
+    })
     cty.restore()
   }
 }
@@ -678,7 +677,11 @@ function renderHeatmapChart() {
 function toggleHeatmapValues() {
   showHeatmapValues.value = !showHeatmapValues.value
   const idx = charts.findIndex(c => c.config.type === 'matrix')
-  if (idx >= 0) { charts[idx].update('none') }
+  if (idx >= 0) chartDrawWithPlugin(charts[idx])
+}
+
+function chartDrawWithPlugin(chart) {
+  chart.draw()
 }
 
 function normalize(value, min, max) {
@@ -723,7 +726,8 @@ async function handleExportPDF() {
   try {
     const result = await exportPDF(pdfArea.value, `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`)
     if (result?.method === 'download') {
-      alert('PDF已导出到下载目录')
+      const isMobile = /android|ios/i.test(navigator.userAgent)
+      alert(isMobile ? 'PDF已导出，请在通知栏或下载目录中查看' : 'PDF已导出到下载目录')
     }
   } catch (e) {
     alert('PDF导出失败: ' + e.message)

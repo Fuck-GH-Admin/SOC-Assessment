@@ -8,18 +8,7 @@ function isMobile() {
   return typeof navigator !== 'undefined' && /android|ios/i.test(navigator.userAgent)
 }
 
-async function shareOrDownload(blob, filename, mimeType) {
-  if (isMobile() && navigator.share && navigator.canShare) {
-    const file = new File([blob], filename, { type: mimeType })
-    if (navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({ files: [file], title: filename })
-        return { method: 'share' }
-      } catch (e) {
-        if (e?.name === 'AbortError') return { method: 'cancelled' }
-      }
-    }
-  }
+async function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -27,8 +16,24 @@ async function shareOrDownload(blob, filename, mimeType) {
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-  return { method: 'download' }
+  if (isMobile()) {
+    window.open(url, '_blank')
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 3000)
+}
+
+async function nativeShare(blob, filename, mime) {
+  if (!isMobile() || !navigator.share) return false
+  try {
+    const file = new File([blob], filename, { type: mime })
+    if (navigator.canShare?.({ files: [file] })) {
+      await navigator.share({ files: [file], title: filename })
+      return true
+    }
+  } catch (e) {
+    if (e?.name === 'AbortError') return true
+  }
+  return false
 }
 
 export function usePDF() {
@@ -53,14 +58,18 @@ export function usePDF() {
         y += pageH
       }
       const blob = pdf.output('blob')
-      const result = await shareOrDownload(blob, filename, 'application/pdf')
+
+      const shared = await nativeShare(blob, filename, 'application/pdf')
+      if (!shared) {
+        await downloadBlob(blob, filename)
+      }
       exporting.value = false
-      return result
+      return { method: shared ? 'share' : 'download' }
     } catch (e) {
       exporting.value = false
       throw e
     }
   }
 
-  return { exportPDF, exporting, shareOrDownload }
+  return { exportPDF, exporting, downloadBlob }
 }
