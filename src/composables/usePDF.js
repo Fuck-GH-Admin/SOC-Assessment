@@ -13,7 +13,7 @@ function nowStr() {
 
 async function loadFont() {
   if (fontReady) return
-  const resp = await fetch('/SimHei.ttf')
+  const resp = await fetch('./SimHei.ttf')
   if (!resp.ok) throw new Error('Font load failed: ' + resp.status)
   const buf = await resp.arrayBuffer()
   const bytes = new Uint8Array(buf)
