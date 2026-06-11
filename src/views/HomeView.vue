@@ -131,6 +131,7 @@
         </div>
       </div>
 
+      <div class="data-scroll">
       <table class="data-table">
         <thead>
           <tr>
@@ -144,6 +145,7 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <div v-if="store.resilience" class="section-card">
