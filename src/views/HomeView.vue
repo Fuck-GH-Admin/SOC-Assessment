@@ -213,39 +213,25 @@
           @click="activeTab = tab.id">{{ tab.label }}</button>
       </div>
       <div class="tab-content" :class="{ active: activeTab === 'erosion' }">
-        <div class="chart-container">
-          <canvas ref="erosionCanvas"></canvas>
-        </div>
+        <div class="chart-container" ref="erosionDom"></div>
       </div>
       <div class="tab-content" :class="{ active: activeTab === 'depth' }">
-        <div class="chart-container">
-          <canvas ref="depthCanvas"></canvas>
-        </div>
+        <div class="chart-container" ref="depthDom"></div>
       </div>
       <div class="tab-content" :class="{ active: activeTab === 'time' }">
-        <div class="chart-container">
-          <canvas ref="timeCanvas"></canvas>
-        </div>
+        <div class="chart-container" ref="timeDom"></div>
       </div>
       <div class="tab-content" :class="{ active: activeTab === 'radar' }">
-        <div class="chart-container">
-          <canvas ref="radarCanvas"></canvas>
-        </div>
+        <div class="chart-container" ref="radarDom"></div>
       </div>
       <div class="tab-content" :class="{ active: activeTab === 'pie' }">
-        <div class="chart-container">
-          <canvas ref="pieCanvas"></canvas>
-        </div>
+        <div class="chart-container" ref="pieDom"></div>
       </div>
       <div class="tab-content" :class="{ active: activeTab === 'scatter' }">
-        <div class="chart-container">
-          <canvas ref="scatterCanvas"></canvas>
-        </div>
+        <div class="chart-container" ref="scatterDom"></div>
       </div>
       <div class="tab-content" :class="{ active: activeTab === 'stacked' }">
-        <div class="chart-container">
-          <canvas ref="stackedCanvas"></canvas>
-        </div>
+        <div class="chart-container" ref="stackedDom"></div>
       </div>
       <div class="tab-content" :class="{ active: activeTab === 'heatmap' }">
         <div style="text-align:right;margin-bottom:0.4rem;">
@@ -253,9 +239,7 @@
             {{ showHeatmapValues ? '隐藏数值' : '显示数值' }}
           </button>
         </div>
-        <div class="chart-container">
-          <canvas ref="heatmapCanvas"></canvas>
-        </div>
+        <div class="chart-container" ref="heatmapDom"></div>
       </div>
     </div>
 
@@ -297,10 +281,7 @@ import { useOnlineStatus } from '@/composables/useOnlineStatus.js'
 import { useAIReport } from '@/composables/useAIReport.js'
 import { usePDF } from '@/composables/usePDF.js'
 import db from '@/db/index.js'
-import { Chart, registerables } from 'chart.js'
-import { MatrixController, MatrixElement } from 'chartjs-chart-matrix'
-
-Chart.register(...registerables, MatrixController, MatrixElement)
+import * as echarts from 'echarts'
 const store = useCalculatorStore()
 const historyStore = useHistoryStore()
 const { online } = useOnlineStatus()
@@ -310,14 +291,14 @@ const { exportReport, exporting: pdfExporting } = usePDF()
 const showHeatmapValues = ref(false)
 const activeTab = ref('erosion')
 const pdfArea = ref(null)
-const erosionCanvas = ref(null)
-const depthCanvas = ref(null)
-const timeCanvas = ref(null)
-const radarCanvas = ref(null)
-const pieCanvas = ref(null)
-const scatterCanvas = ref(null)
-const stackedCanvas = ref(null)
-const heatmapCanvas = ref(null)
+const erosionDom = ref(null)
+const depthDom = ref(null)
+const timeDom = ref(null)
+const radarDom = ref(null)
+const pieDom = ref(null)
+const scatterDom = ref(null)
+const stackedDom = ref(null)
+const heatmapDom = ref(null)
 
 const hasApiConfig = ref(false)
 const calculating = ref(false)
@@ -380,329 +361,162 @@ const baseData = {
 
 const depthLabels = ['表层', '亚表层', '中层', '深层', '底层']
 
-function destroyCharts() { charts.forEach(c => c.destroy()); charts = [] }
+function destroyCharts() { charts.forEach(c => c.dispose()); charts = [] }
+
+const chartTheme = {
+  color: ['#4a9eff','#00d9a5','#ffc107','#e94560','#9c27b0','#ff9800','#03a9f4','#8bc34a'],
+  backgroundColor: 'transparent',
+  textStyle: { color: '#8899aa', fontSize: 11 },
+  title: { textStyle: { color: '#e8e8e8', fontSize: 14 } }
+}
+
+function initChart(dom) {
+  if (!dom) return null
+  if (dom._echart) dom._echart.dispose()
+  const c = echarts.init(dom, chartTheme, { renderer: 'svg' })
+  dom._echart = c
+  charts.push(c)
+  return c
+}
 
 function renderErosionChart() {
-  if (!erosionCanvas.value) return
-  const ctx = erosionCanvas.value.getContext('2d')
+  const c = initChart(erosionDom.value)
+  if (!c) return
   const fert = store.inputs.fert
-  const erosionLevels = [0, 10, 20, 30, 40, 50, 60, 70]
-  const socValues = erosionLevels.map(e => baseData[fert][e][0])
-  const c = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: erosionLevels.map(e => e + ' cm'),
-      datasets: [{
-        label: fert === 'F' ? '施肥处理 SOC' : '不施肥处理 SOC',
-        data: socValues,
-        backgroundColor: 'rgba(74, 158, 255, 0.8)',
-        borderColor: 'rgba(74, 158, 255, 1)',
-        borderWidth: 1,
-        borderRadius: 8
-      }]
-    },
-    options: chartOpts('不同侵蚀强度下的SOC含量', '侵蚀强度 (cm)', 'SOC (g/kg)')
+  const levels = [0,10,20,30,40,50,60,70]
+  c.setOption({
+    title: { text: '不同侵蚀强度下的SOC含量', left: 'center' },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: levels.map(e => e+' cm'), axisLabel: { color: '#889' } },
+    yAxis: { type: 'value', name: 'SOC (g/kg)', axisLabel: { color: '#889' } },
+    series: [{ type: 'bar', data: levels.map(e => baseData[fert][e][0]), itemStyle: { borderRadius: [6,6,0,0] } }]
   })
-  charts.push(c)
 }
 
 function renderDepthChart() {
-  if (!depthCanvas.value) return
-  const ctx = depthCanvas.value.getContext('2d')
+  const c = initChart(depthDom.value)
+  if (!c) return
   const fert = store.inputs.fert
   const erosion = parseInt(store.inputs.erosion)
-  const socValues = baseData[fert][erosion]
-  const c = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: depthLabels,
-      datasets: [{
-        label: `侵蚀${erosion}cm时SOC垂直分布`,
-        data: socValues,
-        borderColor: 'rgba(0, 217, 165, 1)',
-        backgroundColor: 'rgba(0, 217, 165, 0.1)',
-        fill: true, tension: 0.4,
-        pointBackgroundColor: 'rgba(0, 217, 165, 1)',
-        pointRadius: 6
-      }]
-    },
-    options: chartOpts('SOC含量的垂直分布特征', '土层深度', 'SOC (g/kg)')
+  c.setOption({
+    title: { text: 'SOC含量的垂直分布特征', left: 'center' },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: depthLabels, axisLabel: { color: '#889' } },
+    yAxis: { type: 'value', name: 'SOC (g/kg)', axisLabel: { color: '#889' } },
+    series: [{ type: 'line', data: baseData[fert][erosion], smooth: true, areaStyle: { opacity: 0.15 } }]
   })
-  charts.push(c)
 }
 
 function renderTimeChart() {
-  if (!timeCanvas.value) return
-  const ctx = timeCanvas.value.getContext('2d')
-  const fert = store.inputs.fert
-  const fData = fert === 'F'
-    ? [23.9, 21.5, 19.2, 17.8, 16.6]
-    : [23.9, 22.1, 20.5, 19.1, 17.7]
-  const unfData = fert === 'F'
-    ? [23.9, 22.1, 20.5, 19.1, 17.7]
-    : [23.9, 21.5, 19.2, 17.8, 16.6]
-  const c = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: ['0年', '5年', '10年', '15年', '20年'],
-      datasets: [
-        { label: '施肥处理', data: fert === 'F' ? fData : unfData,
-          borderColor: 'rgba(74, 158, 255, 1)', backgroundColor: 'rgba(74, 158, 255, 0.1)',
-          fill: true, tension: 0.4 },
-        { label: '不施肥处理', data: fert === 'F' ? unfData : fData,
-          borderColor: 'rgba(233, 69, 96, 1)', backgroundColor: 'rgba(233, 69, 96, 0.1)',
-          fill: true, tension: 0.4 }
-      ]
-    },
-    options: chartOpts('SOC含量随时间变化趋势', '种植年限', 'SOC (g/kg)')
+  const c = initChart(timeDom.value)
+  if (!c) return
+  const isF = store.inputs.fert === 'F'
+  const fData = isF ? [23.9,21.5,19.2,17.8,16.6] : [23.9,22.1,20.5,19.1,17.7]
+  const uData = isF ? [23.9,22.1,20.5,19.1,17.7] : [23.9,21.5,19.2,17.8,16.6]
+  c.setOption({
+    title: { text: 'SOC含量随时间变化趋势', left: 'center' },
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['施肥','不施肥'], top: 30, textStyle: { color: '#889' } },
+    xAxis: { type: 'category', data: ['0年','5年','10年','15年','20年'], axisLabel: { color: '#889' } },
+    yAxis: { type: 'value', name: 'SOC (g/kg)', axisLabel: { color: '#889' } },
+    series: [
+      { name: '施肥', type: 'line', data: fData, smooth: true, areaStyle: { opacity: 0.1 } },
+      { name: '不施肥', type: 'line', data: uData, smooth: true, areaStyle: { opacity: 0.1 } }
+    ]
   })
-  charts.push(c)
 }
 
 function renderRadarChart() {
-  if (!radarCanvas.value || !store.results) return
-  const ctx = radarCanvas.value.getContext('2d')
+  const c = initChart(radarDom.value)
+  if (!c || !store.results) return
   const r = store.results
-  const c = new Chart(ctx, {
-    type: 'radar',
-    data: {
-      labels: ['SOC含量', '碳库储量', '碳密度', '年恢复速率', '碳库净变化'],
-      datasets: [{
-        label: '当前评估',
-        data: [normalize(r.soc, 0, 25), normalize(r.carbonStorage, 0, 10),
-               normalize(r.carbonDensity, 0, 50), normalize(r.recoveryRate, 0, 1),
-               normalize(r.netChange, -5, 5)],
-        backgroundColor: 'rgba(74, 158, 255, 0.2)',
-        borderColor: 'rgba(74, 158, 255, 1)',
-        pointBackgroundColor: 'rgba(74, 158, 255, 1)'
-      }]
+  c.setOption({
+    title: { text: '土壤碳库多维度综合评估', left: 'center' },
+    radar: {
+      indicator: [
+        { name: 'SOC含量', max: 25 }, { name: '碳库储量', max: 10 },
+        { name: '碳密度', max: 50 }, { name: '恢复速率', max: 1 }, { name: '净变化', max: 5 }
+      ],
+      axisName: { color: '#889' }
     },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      scales: { r: { min: 0, max: 100, ticks: { stepSize: 20 } } },
-      plugins: { title: { display: true, text: '土壤碳库多维度综合评估', font: { size: 14 } } }
-    }
+    series: [{ type: 'radar', data: [{ value: [r.soc, r.carbonStorage, r.carbonDensity, r.recoveryRate, r.netChange] }] }]
   })
-  charts.push(c)
 }
 
 function renderPieChart() {
-  if (!pieCanvas.value) return
-  const ctx = pieCanvas.value.getContext('2d')
-  const fert = store.inputs.fert
-  const erosion = parseInt(store.inputs.erosion)
-  const vals = depthLabels.map((_, i) => baseData[fert][erosion][i])
-  const total = vals.reduce((a, b) => a + b, 0)
-  const c = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels: ['0-20cm', '20-30cm', '30-40cm', '40-50cm', '50-60cm'],
-      datasets: [{
-        data: vals.map(v => +((v / total) * 100).toFixed(1)),
-        backgroundColor: ['rgba(74,158,255,0.8)', 'rgba(0,217,165,0.8)',
-                         'rgba(255,193,7,0.8)', 'rgba(233,69,96,0.8)',
-                         'rgba(156,39,176,0.8)']
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        title: { display: true, text: '各土层碳库组成比例', font: { size: 14 } },
-        legend: { position: 'right' },
-        tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.parsed}%` } }
-      }
-    }
+  const c = initChart(pieDom.value)
+  if (!c) return
+  const vals = baseData[store.inputs.fert][parseInt(store.inputs.erosion)]
+  c.setOption({
+    title: { text: '各土层碳库组成比例', left: 'center' },
+    tooltip: { trigger: 'item', formatter: '{b}: {c} g/kg ({d}%)' },
+    legend: { orient: 'vertical', right: 5, top: 40, textStyle: { color: '#889' } },
+    series: [{
+      type: 'pie', radius: ['45%','70%'], center: ['40%','55%'],
+      data: depthLabels.map((l,i) => ({ name: l, value: vals[i] })),
+      label: { color: '#889' }
+    }]
   })
-  charts.push(c)
 }
 
 function renderScatterChart() {
-  if (!scatterCanvas.value) return
-  const ctx = scatterCanvas.value.getContext('2d')
+  const c = initChart(scatterDom.value)
+  if (!c) return
   const fert = store.inputs.fert
-  const socByErosion = [0, 10, 20, 30, 40, 50, 60, 70].map(e => ({
-    x: e, y: baseData[fert][e][0]
-  }))
-  const c = new Chart(ctx, {
-    type: 'scatter',
-    data: {
-      datasets: [{
-        label: 'SOC随侵蚀强度变化',
-        data: socByErosion,
-        backgroundColor: 'rgba(74, 158, 255, 0.8)',
-        borderColor: 'rgba(74, 158, 255, 1)',
-        pointRadius: 8,
-        pointHoverRadius: 12
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, position: 'top' },
-        title: { display: true, text: '侵蚀强度与SOC含量关联分析', font: { size: 14 } }
-      },
-      scales: {
-        x: { title: { display: true, text: '侵蚀强度 (cm)' } },
-        y: { title: { display: true, text: 'SOC (g/kg)' }, beginAtZero: true }
-      }
-    }
+  const data = [0,10,20,30,40,50,60,70].map(e => [e, baseData[fert][e][0]])
+  c.setOption({
+    title: { text: '侵蚀强度与SOC含量关联分析', left: 'center' },
+    tooltip: { trigger: 'item', formatter: p => `侵蚀: ${p.value[0]}cm<br/>SOC: ${p.value[1]} g/kg` },
+    xAxis: { type: 'value', name: '侵蚀强度(cm)', axisLabel: { color: '#889' }, nameTextStyle: { color: '#889' } },
+    yAxis: { type: 'value', name: 'SOC(g/kg)', axisLabel: { color: '#889' }, nameTextStyle: { color: '#889' } },
+    series: [{ type: 'scatter', data, symbolSize: 14 }]
   })
-  charts.push(c)
 }
 
 function renderStackedChart() {
-  if (!stackedCanvas.value) return
-  const ctx = stackedCanvas.value.getContext('2d')
+  const c = initChart(stackedDom.value)
+  if (!c) return
   const fert = store.inputs.fert
   const erosion = parseInt(store.inputs.erosion)
-  const top = baseData[fert][erosion][0]
-  const sub = baseData[fert][erosion][1]
-  const mid = baseData[fert][erosion][2]
-  const deep = baseData[fert][erosion][3]
-  const bottom = baseData[fert][erosion][4]
-  const c = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: ['0-20cm', '20-30cm', '30-40cm', '40-50cm', '50-60cm'],
-      datasets: [
-        { label: `侵蚀${erosion}cm`, data: [top, sub, mid, deep, bottom],
-          borderColor: 'rgba(74,158,255,0.9)', backgroundColor: 'rgba(74,158,255,0.8)',
-          fill: true, tension: 0.4 },
-        { label: '无侵蚀参考', data: baseData[fert][0],
-          borderColor: 'rgba(0,217,165,0.9)', backgroundColor: 'rgba(0,217,165,0.3)',
-          fill: true, tension: 0.4, borderDash: [5, 5] }
-      ]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, position: 'top' },
-        title: { display: true, text: '当前侵蚀 vs 无侵蚀 SOC分布对比', font: { size: 14 } },
-        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y} g/kg` } }
-      },
-      scales: {
-        x: { title: { display: true, text: '土层深度' } },
-        y: { stacked: false, title: { display: true, text: 'SOC (g/kg)' }, beginAtZero: true }
-      }
-    }
+  c.setOption({
+    title: { text: '当前侵蚀 vs 无侵蚀 SOC分布对比', left: 'center' },
+    tooltip: { trigger: 'axis' },
+    legend: { data: [`侵蚀${erosion}cm`,'无侵蚀'], top: 30, textStyle: { color: '#889' } },
+    xAxis: { type: 'category', data: depthLabels.map((_,i) => `${(i*10)}-${(i+1)*10+10}cm`), axisLabel: { color: '#889' } },
+    yAxis: { type: 'value', name: 'SOC(g/kg)', axisLabel: { color: '#889' } },
+    series: [
+      { name: `侵蚀${erosion}cm`, type: 'line', data: baseData[fert][erosion], areaStyle: { opacity: 0.3 } },
+      { name: '无侵蚀', type: 'line', data: baseData[fert][0], areaStyle: { opacity: 0.1 }, lineStyle: { type: 'dashed' } }
+    ]
   })
-  charts.push(c)
-}
-
-const heatmapValuePlugin = {
-  id: 'heatmapValueLabels',
-  afterDraw(chart) {
-    if (!showHeatmapValues.value) return
-    const cty = chart.ctx
-    const ds = chart.data.datasets[0]
-    if (!ds?.data) return
-    const xScale = chart.scales.x
-    const yScale = chart.scales.y
-    if (!xScale || !yScale) return
-    cty.save()
-    cty.font = 'bold 9px sans-serif'
-    cty.fillStyle = '#fff'
-    cty.textAlign = 'center'
-    cty.textBaseline = 'middle'
-    ds.data.forEach(d => {
-      const v = d?.v
-      if (v == null || !isFinite(v)) return
-      const cx = xScale.getPixelForValue(d.x)
-      const cy = yScale.getPixelForValue(d.y)
-      cty.fillText(String(Math.round(v * 10) / 10) + 'g/kg', cx, cy)
-    })
-    cty.restore()
-  }
-}
-
-function heatmapColor(value, min, max) {
-  if (max === min) return 'rgba(74,158,255,0.8)'
-  const t = (value - min) / (max - min)
-  const r = Math.round(233 - t * 159)
-  const g = Math.round(69 + t * 116)
-  const b = Math.round(96 - t * 96)
-  return `rgba(${r},${g},${b},0.85)`
 }
 
 function renderHeatmapChart() {
-  if (!heatmapCanvas.value) return
-  const ctx = heatmapCanvas.value.getContext('2d')
+  const c = initChart(heatmapDom.value)
+  if (!c) return
   const fert = store.inputs.fert
-  const erosionLevels = [0, 10, 20, 30, 40, 50, 60, 70]
-  const depthIdx = [0, 1, 2, 3, 4]
-  const data = erosionLevels.flatMap(e =>
-    depthIdx.map(d => ({
-      x: e, y: d, v: baseData[fert][e][d] || 0
-    }))
-  )
-  const maxV = Math.max(...data.map(d => d.v))
-  const minV = Math.min(...data.map(d => d.v))
-  if (maxV === 0 && minV === 0) return
-  const heatData = data.map(d => ({
-    x: d.x, y: d.y, v: d.v
-  }))
-  const c = new Chart(ctx, {
-    type: 'matrix',
-    plugins: [heatmapValuePlugin],
-    data: {
-      datasets: [{
-        label: 'SOC (g/kg)',
-        data: heatData,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.15)',
-        backgroundColor(ctx) {
-          const v = ctx.raw?.v ?? 0
-          return heatmapColor(v, minV, maxV)
-        },
-        width: ({ chart }) => (chart.chartArea.width / 8) * 0.85,
-        height: ({ chart }) => (chart.chartArea.height / 5) * 0.85
-      }]
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      animation: false,
-      plugins: {
-        legend: false,
-        title: { display: true, text: '侵蚀强度x土层深度 SOC分布热力图', font: { size: 14 } },
-        tooltip: {
-          callbacks: {
-            title: () => '',
-            label: ctx => `侵蚀${ctx.parsed.x}cm · ${depthLabels[ctx.parsed.y]}: ${ctx.raw.v} g/kg`
-          }
-        }
-      },
-      scales: {
-        x: { offset: true, ticks: { stepSize: 10, callback: v => v + 'cm' }, title: { display: true, text: '侵蚀强度(cm)' } },
-        y: { offset: true, ticks: { callback: v => depthLabels[v] || '' }, title: { display: true, text: '土层深度' } }
-      }
-    }
+  const data = []
+  for (let e = 0; e <= 70; e += 10)
+    for (let d = 0; d < 5; d++)
+      data.push([e, d, baseData[fert][e][d] || 0])
+  const showVal = showHeatmapValues.value
+  c.setOption({
+    title: { text: '侵蚀强度x土层深度 SOC分布热力图', left: 'center' },
+    tooltip: { formatter: p => `侵蚀${p.value[0]}cm · ${depthLabels[p.value[1]]}: ${p.value[2]} g/kg` },
+    visualMap: { min: 4, max: 24, calculable: true, orient: 'horizontal', left: 'center', bottom: 0, textStyle: { color: '#889' } },
+    xAxis: { type: 'category', data: [0,10,20,30,40,50,60,70].map(e=>e+'cm'), axisLabel: { color: '#889' } },
+    yAxis: { type: 'category', data: depthLabels, axisLabel: { color: '#889' } },
+    series: [{
+      type: 'heatmap', data,
+      label: { show: showVal, color: '#fff', fontSize: 9, formatter: p => String(p.value?.[2] ?? '') + 'g/kg' },
+      emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } }
+    }]
   })
-  charts.push(c)
 }
 
 function toggleHeatmapValues() {
   showHeatmapValues.value = !showHeatmapValues.value
-  const idx = charts.findIndex(c => c.config.type === 'matrix')
-  if (idx >= 0) chartDrawWithPlugin(charts[idx])
-}
-
-function chartDrawWithPlugin(chart) {
-  chart.draw()
-}
-
-function normalize(value, min, max) {
-  return Math.max(0, Math.min(100, ((value - min) / (max - min)) * 100))
-}
-
-function chartOpts(title, xLabel, yLabel) {
-  return {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: true, position: 'top' }, title: { display: true, text: title, font: { size: 14 } } },
-    scales: {
-      y: { beginAtZero: true, title: { display: true, text: yLabel } },
-      x: { title: { display: true, text: xLabel } }
-    }
-  }
+  heatmapDom.value?._echart?.setOption({ series: [{ label: { show: showHeatmapValues.value } }] })
 }
 
 async function handleCalculate() {

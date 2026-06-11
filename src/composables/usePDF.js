@@ -72,8 +72,7 @@ function table(doc, rows, y) {
 function chartToImg(chart) {
   if (!chart) return null
   try {
-    chart.resize(600, 350)
-    const img = chart.toBase64Image('image/png', 2)
+    const img = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#0d1b2a' })
     if (!img || img.length < 500) return null
     return img
   } catch { return null }
