@@ -18,9 +18,8 @@ async function loadFont() {
   const buf = await resp.arrayBuffer()
   const bytes = new Uint8Array(buf)
   const chunks = []
-  const CHUNK = 0x2000
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK)))
+  for (let i = 0; i < bytes.length; i += 0x2000) {
+    chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 0x2000)))
   }
   fontBase64 = btoa(chunks.join(''))
   fontReady = true
@@ -45,7 +44,7 @@ function section(doc, text, y) {
   doc.setFontSize(12)
   doc.setTextColor('#000')
   doc.text(text, 15, y)
-  doc.setDrawColor('#ccc')
+  doc.setDrawColor('#ddd')
   doc.line(15, y + 2, 195, y + 2)
   return y + 10
 }
@@ -60,14 +59,8 @@ function table(doc, rows, y) {
     let x = 15
     row.forEach((cell, ci) => {
       const w = colW[ci] || 40
-      if (ri === 0) {
-        doc.setFillColor('#f0f0f0')
-        doc.rect(x, y - 4, w, 6, 'F')
-      }
-      if (ri > 0 && ri % 2 === 0) {
-        doc.setFillColor('#fafafa')
-        doc.rect(x, y - 4, w, 6, 'F')
-      }
+      if (ri === 0) { doc.setFillColor('#f0f0f0'); doc.rect(x, y - 4, w, 6, 'F') }
+      if (ri > 0 && ri % 2 === 0) { doc.setFillColor('#fafafa'); doc.rect(x, y - 4, w, 6, 'F') }
       doc.text(String(cell), x + 2, y)
       x += w
     })
@@ -76,19 +69,14 @@ function table(doc, rows, y) {
   return y + 4
 }
 
-function chartImg(doc, chart, y) {
-  if (!chart) return y
+function chartToImg(chart) {
+  if (!chart) return null
   try {
-    const img = chart.toBase64Image('image/png', 1)
-    if (!img || img.length < 200) return y
-    const cw = chart.canvas?.width || chart.width || 600
-    const ch = chart.canvas?.height || chart.height || 300
-    const pw = 180
-    const ph = (ch / cw) * pw
-    if (y + ph > 280) { doc.addPage(); y = 20; reg(doc) }
-    doc.addImage(img, 'PNG', 15, y, pw, ph)
-    return y + ph + 4
-  } catch { return y }
+    chart.resize(600, 350)
+    const img = chart.toBase64Image('image/png', 2)
+    if (!img || img.length < 500) return null
+    return img
+  } catch { return null }
 }
 
 export function usePDF() {
@@ -110,7 +98,7 @@ export function usePDF() {
       y = section(doc, '输入参数', y)
       y = table(doc, [
         ['参数', '值', '说明'],
-        ['施肥处理', data.fert || '-', data.fert?.includes('施肥')?'施氮肥':'对照'],
+        ['施肥处理', data.fert||'-', data.fert?.includes('施肥')?'施氮肥':'对照'],
         ['侵蚀强度', String(data.erosion||'0')+' cm', '土壤侵蚀深度'],
         ['土壤容重', String(data.bd??'-'), 'g/cm\u00B3'],
         ['pH值', String(data.ph??'-'), ''],
@@ -148,9 +136,13 @@ export function usePDF() {
       }
 
       if (data.charts?.length) {
-        y = section(doc, '数据图表', y)
+        y = section(doc, '数据图表 (8张)', y)
         for (const c of data.charts) {
-          y = chartImg(doc, c, y)
+          const img = chartToImg(c)
+          if (!img) continue
+          if (y + 75 > 280) { doc.addPage(); y = 20; reg(doc) }
+          doc.addImage(img, 'PNG', 15, y, 180, 105)
+          y += 108
         }
       }
 
