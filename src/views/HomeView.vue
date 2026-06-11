@@ -86,12 +86,16 @@
       </ul>
     </div>
 
-    <div v-if="store.results" class="section-card" id="resultsSection">
+    <div v-if="store.results" ref="pdfArea" id="resultsSection">
+      <div class="section-card">
       <div class="section-header">
         <div class="section-icon">📈</div>
         <div class="section-title">计算结果</div>
         <button class="btn btn-secondary" style="margin-left: auto; padding: 0.4rem 0.8rem; font-size: 0.8rem;" @click="saveResult">
           💾 保存记录
+        </button>
+        <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" @click="handleExportPDF" :disabled="pdfExporting">
+          {{ pdfExporting ? '⏳ 导出中...' : '📄 导出PDF' }}
         </button>
       </div>
       <div class="results-grid">
@@ -275,6 +279,7 @@
       <div v-if="reportError" class="error-msg" style="margin-top: 0.5rem;">{{ reportError }}</div>
     </div>
   </div>
+  </div>
 </template>
 
 <script setup>
@@ -283,6 +288,7 @@ import { useCalculatorStore } from '@/stores/calculator.js'
 import { useHistoryStore } from '@/stores/history.js'
 import { useOnlineStatus } from '@/composables/useOnlineStatus.js'
 import { useAIReport } from '@/composables/useAIReport.js'
+import { usePDF } from '@/composables/usePDF.js'
 import db from '@/db/index.js'
 import { Chart, registerables } from 'chart.js'
 import { MatrixController, MatrixElement } from 'chartjs-chart-matrix'
@@ -292,8 +298,10 @@ const store = useCalculatorStore()
 const historyStore = useHistoryStore()
 const { online } = useOnlineStatus()
 const { generateReport, generating: reportGenerating, error: reportError, streamContent: aiReport, reasoningContent, resetReport, renderMarkdown } = useAIReport()
+const { exportPDF, exporting: pdfExporting } = usePDF()
 
 const activeTab = ref('erosion')
+const pdfArea = ref(null)
 const erosionCanvas = ref(null)
 const depthCanvas = ref(null)
 const timeCanvas = ref(null)
@@ -661,6 +669,15 @@ function sanitize(v) {
   if (typeof v === 'number' && isNaN(v)) return 0
   if (v === null || v === undefined) return 0
   return v
+}
+
+async function handleExportPDF() {
+  if (pdfExporting.value || !pdfArea.value) return
+  try {
+    await exportPDF(pdfArea.value, `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`)
+  } catch (e) {
+    alert('❌ PDF导出失败: ' + e.message)
+  }
 }
 
 async function saveResult() {

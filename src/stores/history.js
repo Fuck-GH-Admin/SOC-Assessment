@@ -38,11 +38,6 @@ export const useHistoryStore = defineStore('history', () => {
       })
       const json = JSON.stringify(sanitized, null, 2)
       const filename = `soc-records-${new Date().toISOString().slice(0, 10)}.json`
-      if (navigator.share) {
-        const tmpFile = new File([json], filename, { type: 'application/json' })
-        await navigator.share({ files: [tmpFile], title: 'SOC数据导出' })
-        return
-      }
       const blob = new Blob([json], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
