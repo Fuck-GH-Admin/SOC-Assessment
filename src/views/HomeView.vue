@@ -303,7 +303,7 @@ const store = useCalculatorStore()
 const historyStore = useHistoryStore()
 const { online } = useOnlineStatus()
 const { generateReport, generating: reportGenerating, error: reportError, streamContent: aiReport, reasoningContent, resetReport, renderMarkdown } = useAIReport()
-const { exportPDF, exporting: pdfExporting } = usePDF()
+const { exportReport, exporting: pdfExporting } = usePDF()
 
 const showHeatmapValues = ref(false)
 const activeTab = ref('erosion')
@@ -596,7 +596,7 @@ const heatmapValuePlugin = {
     const meta = chart.getDatasetMeta(0)
     if (!meta?.data || !ds?.data) return
     cty.save()
-    cty.font = 'bold 10px sans-serif'
+    cty.font = 'bold 9px sans-serif'
     cty.fillStyle = '#fff'
     cty.textAlign = 'center'
     cty.textBaseline = 'middle'
@@ -604,11 +604,10 @@ const heatmapValuePlugin = {
       const raw = ds.data[i]
       const v = raw?.v
       if (v != null && isFinite(v)) {
-        const w = el.width || 40
-        const h = el.height || 30
-        const cx = el.x - w / 2
-        const cy = el.y - h / 2
-        cty.fillText(String(Math.round(v * 10) / 10), cx + w / 2, cy + h / 2)
+        const w = el.width
+        const h = el.height
+        if (!w || !h) return
+        cty.fillText(String(Math.round(v * 10) / 10) + 'g/kg', el.x, el.y)
       }
     })
     cty.restore()
@@ -728,13 +727,37 @@ function sanitize(v) {
 }
 
 async function handleExportPDF() {
-  if (pdfExporting.value || !pdfArea.value) return
+  if (pdfExporting.value || !store.results) return
   try {
-    const result = await exportPDF(pdfArea.value, `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`)
+    const chartCanvases = [
+      erosionCanvas.value, depthCanvas.value, timeCanvas.value,
+      radarCanvas.value, pieCanvas.value, scatterCanvas.value,
+      stackedCanvas.value, heatmapCanvas.value
+    ].filter(Boolean)
+
+    const result = await exportReport({
+      inputs: {
+        fert: store.inputs.fert,
+        erosion: store.inputs.erosion,
+        depth: store.inputs.depth,
+        bd: store.inputs.bd,
+        ph: store.inputs.ph,
+        wc: store.inputs.wc,
+        clay: store.inputs.clay,
+        tn: store.inputs.tn,
+        cropBiomass: store.inputs.cropBiomass,
+        strawCarbonRatio: store.inputs.strawCarbonRatio
+      },
+      results: store.results,
+      resilience: store.resilience,
+      aiReport: aiReport.value,
+      charts: chartCanvases
+    })
     if (result?.method === 'filesystem') {
       alert('PDF已保存到: ' + (result.path || 'Documents'))
-    } else if (result?.method === 'download') {
-      alert('PDF已导出到下载目录')
+    } else {
+      const isM = /android|ios/i.test(navigator.userAgent)
+      alert(isM ? 'PDF已导出，请在通知栏或下载目录查看' : 'PDF已导出到下载目录')
     }
   } catch (e) {
     alert('PDF导出失败: ' + e.message)
