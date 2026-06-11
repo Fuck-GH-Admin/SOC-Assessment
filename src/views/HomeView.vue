@@ -726,26 +726,9 @@ function sanitize(v) {
 }
 
   async function handleExportPDF() {
-    if (pdfExporting.value || !store.results) return
+    if (pdfExporting.value || !pdfArea.value) return
     try {
-      const result = await exportReport({
-        inputs: {
-          fert: store.inputs.fert,
-          erosion: store.inputs.erosion,
-          depth: store.inputs.depth,
-          bd: store.inputs.bd,
-          ph: store.inputs.ph,
-          wc: store.inputs.wc,
-          clay: store.inputs.clay,
-          tn: store.inputs.tn,
-          cropBiomass: store.inputs.cropBiomass,
-          strawCarbonRatio: store.inputs.strawCarbonRatio
-        },
-        results: store.results,
-        resilience: store.resilience,
-        aiReport: aiReport.value
-      })
-      if (result?.method === 'download') alert('PDF已导出到下载目录')
+      await exportReport(pdfArea.value)
     } catch (e) {
       alert('PDF导出失败: ' + e.message)
     }
