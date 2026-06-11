@@ -726,9 +726,22 @@ function sanitize(v) {
 }
 
   async function handleExportPDF() {
-    if (pdfExporting.value || !pdfArea.value) return
+    if (pdfExporting.value || !store.results) return
     try {
-      await exportReport(pdfArea.value)
+      await exportReport({
+        fert: store.inputs.fert === 'F' ? '施肥' : (store.inputs.fert === 'UNF' ? '不施肥' : String(store.inputs.fert)),
+        erosion: String(store.inputs.erosion || '0'),
+        bd: String(store.inputs.bd || '-'),
+        ph: String(store.inputs.ph || '-'),
+        wc: String(store.inputs.wc || '-'),
+        clay: String(store.inputs.clay || '-'),
+        tn: String(store.inputs.tn || '-'),
+        cropBiomass: String(store.inputs.cropBiomass || '-'),
+        strawCarbon: String(store.inputs.strawCarbonRatio || '-'),
+        results: store.results,
+        resilience: store.resilience,
+        aiReport: aiReport.value
+      })
     } catch (e) {
       alert('PDF导出失败: ' + e.message)
     }
