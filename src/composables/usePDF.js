@@ -15,7 +15,7 @@ export function usePDF() {
     exporting.value = true
     try {
       const canvas = await html2canvas(el, {
-        scale: 3,
+        scale: 1.5,
         useCORS: true,
         backgroundColor: '#0d1b2a',
         logging: false
