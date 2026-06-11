@@ -734,10 +734,11 @@ function sanitize(v) {
       for (const t of chartTabs) {
         activeTab.value = t.id
         await nextTick()
-        await new Promise(r => setTimeout(r, 100))
+        await new Promise(r => setTimeout(r, 200))
       }
       activeTab.value = current
       await nextTick()
+      await new Promise(r => setTimeout(r, 200))
 
       await exportReport({
         fert: store.inputs.fert === 'F' ? '施肥' : (store.inputs.fert === 'UNF' ? '不施肥' : String(store.inputs.fert)),
