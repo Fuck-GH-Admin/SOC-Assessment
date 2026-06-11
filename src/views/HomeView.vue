@@ -743,15 +743,9 @@ function sanitize(v) {
         },
         results: store.results,
         resilience: store.resilience,
-        aiReport: aiReport.value,
-        charts
+        aiReport: aiReport.value
       })
-      if (result?.method === 'filesystem') {
-        alert('PDF已保存到: ' + (result.path || 'Documents'))
-      } else {
-        const isM = /android|ios/i.test(navigator.userAgent)
-        alert(isM ? 'PDF已导出，请在通知栏或下载目录查看' : 'PDF已导出到下载目录')
-      }
+      if (result?.method === 'download') alert('PDF已导出到下载目录')
     } catch (e) {
       alert('PDF导出失败: ' + e.message)
     }
