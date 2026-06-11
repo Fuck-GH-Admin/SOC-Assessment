@@ -603,11 +603,10 @@ const heatmapValuePlugin = {
     meta.data.forEach((el, i) => {
       const raw = ds.data[i]
       const v = raw?.v
-      if (v != null && isFinite(v)) {
-        const w = el.width
-        const h = el.height
-        if (!w || !h) return
-        cty.fillText(String(Math.round(v * 10) / 10) + 'g/kg', el.x, el.y)
+      if (v != null && isFinite(v) && el.width && el.height) {
+        const cx = el.x + el.width / 2
+        const cy = el.y + el.height / 2
+        cty.fillText(String(Math.round(v * 10) / 10) + 'g/kg', cx, cy)
       }
     })
     cty.restore()

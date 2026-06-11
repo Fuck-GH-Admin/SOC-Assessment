@@ -57,7 +57,9 @@ async function saveToFilesystem(blob, filename) {
 
 function canvasToImage(canvas) {
   if (!canvas) return null
-  return canvas.toDataURL('image/png')
+  if (canvas.width === 0 || canvas.height === 0) return null
+  try { return canvas.toDataURL('image/png') }
+  catch { return null }
 }
 
 function drawTitle(doc, text, y) {
@@ -117,15 +119,15 @@ function drawTable(doc, rows, y) {
 }
 
 function drawChartImage(doc, canvas, y, maxW) {
-  if (!canvas) return y
   const img = canvasToImage(canvas)
   if (!img) return y
-  const cw = canvas.width
-  const ch = canvas.height
+  const cw = canvas.width || 600
+  const ch = canvas.height || 300
   const pdfW = maxW || 180
   const pdfH = (ch / cw) * pdfW
   if (y + pdfH > 280) { doc.addPage(); y = 20 }
-  doc.addImage(img, 'PNG', 15, y, pdfW, pdfH)
+  try { doc.addImage(img, 'PNG', 15, y, pdfW, pdfH) }
+  catch { return y }
   return y + pdfH + 5
 }
 
@@ -144,31 +146,31 @@ export function usePDF() {
       y += 8
 
       y = drawSection(doc, '输入参数', y)
-      const fertLabel = inputs.fert === 'F' ? '施肥' : (inputs.fert === 'UNF' ? '不施肥' : inputs.fert)
+      const fertLabel = inputs.fert === 'F' ? '施肥' : (inputs.fert === 'UNF' ? '不施肥' : inputs.fert || '')
       y = drawTable(doc, [
         ['参数', '值', '说明'],
         ['施肥处理', fertLabel, inputs.fert === 'F' ? '施氮肥' : '对照'],
-        ['侵蚀强度', inputs.erosion + ' cm', '土壤侵蚀深度'],
-        ['土层深度', String(inputs.depth), 'cm'],
-        ['土壤容重', String(inputs.bd), 'g/cm³'],
-        ['pH值', String(inputs.ph || '-'), '-'],
-        ['含水量', String(inputs.wc || '-'), '%'],
-        ['黏+粉粒', String(inputs.clay || '-'), '%'],
-        ['全氮含量', String(inputs.tn || '-'), '%'],
-        ['秸秆生物量', String(inputs.cropBiomass || '-'), 'kg/ha'],
-        ['秸秆碳含量', String(inputs.strawCarbonRatio || '-'), '比例']
+        ['侵蚀强度', String(inputs.erosion || 0) + ' cm', '土壤侵蚀深度'],
+        ['土层深度', String(inputs.depth || 0), 'cm'],
+        ['土壤容重', String(inputs.bd ?? '-'), 'g/cm³'],
+        ['pH值', String(inputs.ph ?? '-'), '-'],
+        ['含水量', String(inputs.wc ?? '-'), '%'],
+        ['黏+粉粒', String(inputs.clay ?? '-'), '%'],
+        ['全氮含量', String(inputs.tn ?? '-'), '%'],
+        ['秸秆生物量', String(inputs.cropBiomass ?? '-'), 'kg/ha'],
+        ['秸秆碳含量', String(inputs.strawCarbonRatio ?? '-'), '比例']
       ], y)
 
       if (results) {
         y = drawSection(doc, '计算结果', y)
         y = drawTable(doc, [
           ['指标', '数值', '单位'],
-          ['SOC含量', String(results.soc), 'g/kg'],
-          ['碳库储量', String(results.carbonStorage), 'kg C/m²'],
-          ['碳密度', String(results.carbonDensity), 'kg C/m³'],
-          ['碳库净变化量', String(results.netChange), 'kg C/m²'],
-          ['年恢复速率', String(results.recoveryRate), 'kg C/m²/年'],
-          ['SOC损失率', String(results.lossRate), '%']
+          ['SOC含量', String(results.soc ?? '-'), 'g/kg'],
+          ['碳库储量', String(results.carbonStorage ?? '-'), 'kg C/m²'],
+          ['碳密度', String(results.carbonDensity ?? '-'), 'kg C/m³'],
+          ['碳库净变化量', String(results.netChange ?? '-'), 'kg C/m²'],
+          ['年恢复速率', String(results.recoveryRate ?? '-'), 'kg C/m²/年'],
+          ['SOC损失率', String(results.lossRate ?? '-'), '%']
         ], y)
       }
 
@@ -176,12 +178,12 @@ export function usePDF() {
         y = drawSection(doc, '土壤恢复力评估', y)
         y = drawTable(doc, [
           ['指标', '数值', '单位'],
-          ['表层碳库(0-20cm)', String(resilience.carbonPool_0_20), 'kg C/m²'],
-          ['剖面碳库(0-60cm)', String(resilience.carbonPool_0_60), 'kg C/m²'],
-          ['20年净变化量', String(resilience.netChange_20yr), 'kg C/m²'],
-          ['100年净变化量', String(resilience.netChange_100yr), 'kg C/m²'],
-          ['年恢复速率', String(resilience.recoveryRate_annual), 'kg C/m²/年'],
-          ['恢复状态', String(resilience.status), '-']
+          ['表层碳库(0-20cm)', String(resilience.carbonPool_0_20 ?? '-'), 'kg C/m²'],
+          ['剖面碳库(0-60cm)', String(resilience.carbonPool_0_60 ?? '-'), 'kg C/m²'],
+          ['20年净变化量', String(resilience.netChange_20yr ?? '-'), 'kg C/m²'],
+          ['100年净变化量', String(resilience.netChange_100yr ?? '-'), 'kg C/m²'],
+          ['年恢复速率', String(resilience.recoveryRate_annual ?? '-'), 'kg C/m²/年'],
+          ['恢复状态', String(resilience.status ?? '-'), '-']
         ], y)
       }
 
@@ -194,8 +196,8 @@ export function usePDF() {
 
       if (aiReport) {
         y = drawSection(doc, 'AI评估报告', y)
-        const plain = aiReport.replace(/[#*`>\[\]]/g, '').replace(/\n{3,}/g, '\n\n')
-        y = drawText(doc, plain, y, 8)
+        const plain = aiReport.replace(/[#*`>\[\]]/g, '').replace(/\n{3,}/g, '\n\n').trim()
+        if (plain) y = drawText(doc, plain, y, 8)
       }
 
       const blob = doc.output('blob')
