@@ -92,10 +92,10 @@
         <div class="section-icon">📈</div>
         <div class="section-title">计算结果</div>
         <button class="btn btn-secondary" style="margin-left: auto; padding: 0.4rem 0.8rem; font-size: 0.8rem;" @click="saveResult">
-          💾 保存记录
+          💾 保存
         </button>
-        <button class="btn btn-secondary" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" @click="handleExportPDF" :disabled="pdfExporting">
-          {{ pdfExporting ? '⏳ 导出中...' : '📄 导出PDF' }}
+        <button class="btn" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; background: var(--accent); color: #fff; border: none; border-radius: 8px; cursor: pointer;" @click="handleExportPDF" :disabled="pdfExporting">
+          {{ pdfExporting ? '⏳ ...' : '📄 PDF' }}
         </button>
       </div>
       <div class="results-grid">
@@ -246,6 +246,11 @@
         </div>
       </div>
       <div class="tab-content" :class="{ active: activeTab === 'heatmap' }">
+        <div style="text-align:right;margin-bottom:0.4rem;">
+          <button class="btn btn-sm btn-secondary" @click="toggleHeatmapValues" style="font-size:0.7rem;padding:0.25rem 0.5rem;">
+            {{ showHeatmapValues ? '隐藏数值' : '显示数值' }}
+          </button>
+        </div>
         <div class="chart-container">
           <canvas ref="heatmapCanvas"></canvas>
         </div>
@@ -300,6 +305,7 @@ const { online } = useOnlineStatus()
 const { generateReport, generating: reportGenerating, error: reportError, streamContent: aiReport, reasoningContent, resetReport, renderMarkdown } = useAIReport()
 const { exportPDF, exporting: pdfExporting } = usePDF()
 
+const showHeatmapValues = ref(false)
 const activeTab = ref('erosion')
 const pdfArea = ref(null)
 const erosionCanvas = ref(null)
@@ -581,25 +587,33 @@ function renderStackedChart() {
   charts.push(c)
 }
 
+function heatmapColor(value, min, max) {
+  if (max === min) return 'rgba(74,158,255,0.8)'
+  const t = (value - min) / (max - min)
+  const r = Math.round(233 - t * 159)
+  const g = Math.round(69 + t * 116)
+  const b = Math.round(96 - t * 96)
+  return `rgba(${r},${g},${b},0.85)`
+}
+
 function renderHeatmapChart() {
   if (!heatmapCanvas.value) return
   const ctx = heatmapCanvas.value.getContext('2d')
   const fert = store.inputs.fert
   const erosionLevels = [0, 10, 20, 30, 40, 50, 60, 70]
   const depthIdx = [0, 1, 2, 3, 4]
-  const colors = ['rgba(74,158,255,0.1)', 'rgba(74,158,255,0.3)', 'rgba(74,158,255,0.5)',
-                  'rgba(74,158,255,0.7)', 'rgba(74,158,255,0.9)']
-  const data = erosionLevels.flatMap((e, ei) =>
-    depthIdx.map((d, di) => ({
+  const data = erosionLevels.flatMap(e =>
+    depthIdx.map(d => ({
       x: e, y: d, v: baseData[fert][e][d] || 0
     }))
   )
   const maxV = Math.max(...data.map(d => d.v))
-  if (maxV === 0) return
+  const minV = Math.min(...data.map(d => d.v))
+  if (maxV === 0 && minV === 0) return
   const heatData = data.map(d => ({
     x: d.x, y: d.y,
     v: d.v,
-    backgroundColor: colors[Math.min(Math.floor((d.v / maxV) * colors.length), colors.length - 1)]
+    backgroundColor: heatmapColor(d.v, minV, maxV)
   }))
   const c = new Chart(ctx, {
     type: 'matrix',
@@ -608,16 +622,33 @@ function renderHeatmapChart() {
         label: 'SOC (g/kg)',
         data: heatData,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: 'rgba(255,255,255,0.15)',
         width: ({ chart }) => (chart.chartArea.width / 8) * 0.85,
         height: ({ chart }) => (chart.chartArea.height / 5) * 0.85
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      animation: {
+        onComplete: () => {
+          if (!showHeatmapValues.value) return
+          const cty = c.ctx
+          cty.save()
+          cty.font = 'bold 11px sans-serif'
+          cty.fillStyle = '#fff'
+          cty.textAlign = 'center'
+          cty.textBaseline = 'middle'
+          const meta = c.getDatasetMeta(0)
+          meta.data.forEach(el => {
+            const v = el.$context.raw?.v
+            if (v != null) cty.fillText(String(Math.round(v * 10) / 10), el.x, el.y)
+          })
+          cty.restore()
+        }
+      },
       plugins: {
         legend: false,
-        title: { display: true, text: '侵蚀强度×土层深度 SOC分布热力图', font: { size: 14 } },
+        title: { display: true, text: '侵蚀强度x土层深度 SOC分布热力图', font: { size: 14 } },
         tooltip: {
           callbacks: {
             title: () => '',
@@ -626,12 +657,19 @@ function renderHeatmapChart() {
         }
       },
       scales: {
-        x: { offset: true, ticks: { stepSize: 10, callback: v => v + 'cm' }, title: { display: true, text: '侵蚀强度' } },
+        x: { offset: true, ticks: { stepSize: 10, callback: v => v + 'cm' }, title: { display: true, text: '侵蚀强度(cm)' } },
         y: { offset: true, ticks: { callback: v => depthLabels[v] || '' }, title: { display: true, text: '土层深度' } }
       }
     }
   })
   charts.push(c)
+}
+
+function toggleHeatmapValues() {
+  showHeatmapValues.value = !showHeatmapValues.value
+  const idx = charts.findIndex(c => c.config.type === 'matrix')
+  if (idx >= 0) { charts[idx].destroy(); charts.splice(idx, 1) }
+  renderHeatmapChart()
 }
 
 function normalize(value, min, max) {
