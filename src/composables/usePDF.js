@@ -8,18 +8,16 @@ function isMobile() {
   return typeof navigator !== 'undefined' && /android|ios/i.test(navigator.userAgent)
 }
 
-async function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  if (isMobile()) {
-    window.open(url, '_blank')
-  }
-  setTimeout(() => URL.revokeObjectURL(url), 3000)
+async function toBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      const base64 = reader.result.split(',')[1]
+      resolve(base64)
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
 }
 
 async function nativeShare(blob, filename, mime) {
@@ -34,6 +32,38 @@ async function nativeShare(blob, filename, mime) {
     if (e?.name === 'AbortError') return true
   }
   return false
+}
+
+async function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  if (isMobile()) {
+    window.open(url, '_blank')
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 3000)
+}
+
+async function saveToFilesystem(blob, filename) {
+  if (!isMobile()) return null
+  try {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem')
+    const base64 = await toBase64(blob)
+    const result = await Filesystem.writeFile({
+      path: filename,
+      data: base64,
+      directory: Directory.Documents,
+      recursive: true
+    })
+    return result.uri
+  } catch (e) {
+    console.warn('Filesystem write failed:', e)
+    return null
+  }
 }
 
 export function usePDF() {
@@ -59,17 +89,25 @@ export function usePDF() {
       }
       const blob = pdf.output('blob')
 
-      const shared = await nativeShare(blob, filename, 'application/pdf')
-      if (!shared) {
+      let path = null
+      if (isMobile()) {
+        const shared = await nativeShare(blob, filename, 'application/pdf')
+        if (!shared) {
+          path = await saveToFilesystem(blob, filename)
+          if (!path) {
+            await downloadBlob(blob, filename)
+          }
+        }
+      } else {
         await downloadBlob(blob, filename)
       }
       exporting.value = false
-      return { method: shared ? 'share' : 'download' }
+      return { method: path ? 'filesystem' : 'download', path }
     } catch (e) {
       exporting.value = false
       throw e
     }
   }
 
-  return { exportPDF, exporting, downloadBlob }
+  return { exportPDF, exporting, downloadBlob, saveToFilesystem }
 }

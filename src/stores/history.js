@@ -39,6 +39,30 @@ export const useHistoryStore = defineStore('history', () => {
       const json = JSON.stringify(sanitized, null, 2)
       const filename = `soc-records-${new Date().toISOString().slice(0, 10)}.json`
       const blob = new Blob([json], { type: 'application/json' })
+
+      const isM = /android|ios/i.test(navigator.userAgent)
+      if (isM) {
+        try {
+          const { Filesystem, Directory } = await import('@capacitor/filesystem')
+          const reader = new FileReader()
+          const base64 = await new Promise((resolve, reject) => {
+            reader.onloadend = () => resolve(reader.result.split(',')[1])
+            reader.onerror = reject
+            reader.readAsDataURL(blob)
+          })
+          const result = await Filesystem.writeFile({
+            path: filename,
+            data: base64,
+            directory: Directory.Documents,
+            recursive: true
+          })
+          alert('数据已保存到: ' + (result.uri || 'Documents'))
+          return
+        } catch (fsErr) {
+          console.warn('Filesystem write failed, fallback to download:', fsErr)
+        }
+      }
+
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -46,7 +70,9 @@ export const useHistoryStore = defineStore('history', () => {
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
+      if (isM) window.open(url, '_blank')
       setTimeout(() => URL.revokeObjectURL(url), 1000)
+      alert('数据已导出到下载目录')
     } catch (e) {
       console.error('导出失败:', e)
       alert('导出失败: ' + e.message)
