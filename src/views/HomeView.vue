@@ -596,7 +596,7 @@ const heatmapValuePlugin = {
     const meta = chart.getDatasetMeta(0)
     if (!meta?.data || !ds?.data) return
     cty.save()
-    cty.font = 'bold 11px sans-serif'
+    cty.font = 'bold 10px sans-serif'
     cty.fillStyle = '#fff'
     cty.textAlign = 'center'
     cty.textBaseline = 'middle'
@@ -604,7 +604,11 @@ const heatmapValuePlugin = {
       const raw = ds.data[i]
       const v = raw?.v
       if (v != null && isFinite(v)) {
-        cty.fillText(String(Math.round(v * 10) / 10), el.x, el.y)
+        const w = el.width || 40
+        const h = el.height || 30
+        const cx = el.x - w / 2
+        const cy = el.y - h / 2
+        cty.fillText(String(Math.round(v * 10) / 10), cx + w / 2, cy + h / 2)
       }
     })
     cty.restore()
@@ -635,9 +639,7 @@ function renderHeatmapChart() {
   const minV = Math.min(...data.map(d => d.v))
   if (maxV === 0 && minV === 0) return
   const heatData = data.map(d => ({
-    x: d.x, y: d.y,
-    v: d.v,
-    backgroundColor: heatmapColor(d.v, minV, maxV)
+    x: d.x, y: d.y, v: d.v
   }))
   const c = new Chart(ctx, {
     type: 'matrix',
@@ -648,6 +650,10 @@ function renderHeatmapChart() {
         data: heatData,
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.15)',
+        backgroundColor(ctx) {
+          const v = ctx.raw?.v ?? 0
+          return heatmapColor(v, minV, maxV)
+        },
         width: ({ chart }) => (chart.chartArea.width / 8) * 0.85,
         height: ({ chart }) => (chart.chartArea.height / 5) * 0.85
       }]
@@ -725,9 +731,10 @@ async function handleExportPDF() {
   if (pdfExporting.value || !pdfArea.value) return
   try {
     const result = await exportPDF(pdfArea.value, `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`)
-    if (result?.method === 'download') {
-      const isMobile = /android|ios/i.test(navigator.userAgent)
-      alert(isMobile ? 'PDF已导出，请在通知栏或下载目录中查看' : 'PDF已导出到下载目录')
+    if (result?.method === 'filesystem') {
+      alert('PDF已保存到: ' + (result.path || 'Documents'))
+    } else if (result?.method === 'download') {
+      alert('PDF已导出到下载目录')
     }
   } catch (e) {
     alert('PDF导出失败: ' + e.message)
