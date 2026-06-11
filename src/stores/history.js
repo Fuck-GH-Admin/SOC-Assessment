@@ -39,7 +39,6 @@ export const useHistoryStore = defineStore('history', () => {
       const json = JSON.stringify(sanitized, null, 2)
       const filename = `soc-records-${new Date().toISOString().slice(0, 10)}.json`
       const blob = new Blob([json], { type: 'application/json' })
-
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -47,10 +46,9 @@ export const useHistoryStore = defineStore('history', () => {
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setTimeout(() => URL.revokeObjectURL(url), 3000)
       alert('JSON数据已导出')
     } catch (e) {
-      console.error('导出失败:', e)
       alert('导出失败: ' + e.message)
     }
   }

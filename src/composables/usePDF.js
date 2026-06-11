@@ -3,10 +3,6 @@ import jsPDF from 'jspdf'
 
 const exporting = ref(false)
 
-function isMobile() {
-  return typeof navigator !== 'undefined' && /android|ios/i.test(navigator.userAgent)
-}
-
 const HELVETICA = 'helvetica'
 
 function drawTitle(doc, text, y) {
@@ -133,23 +129,7 @@ export function usePDF() {
     exporting.value = true
     try {
       const doc = buildPDF(data.inputs, data.results, data.resilience, data.aiReport)
-      const arrayBuffer = doc.output('arraybuffer')
-      const blob = new Blob([arrayBuffer], { type: 'application/pdf' })
-
-      // on mobile: try share, fallback to download
-      if (isMobile() && navigator.share) {
-        const filename = `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`
-        try {
-          const file = new File([blob], filename, { type: 'application/pdf' })
-          if (navigator.canShare?.({ files: [file] }) !== false) {
-            await navigator.share({ files: [file], title: filename })
-            exporting.value = false
-            return { method: 'share' }
-          }
-        } catch { /* fall through */ }
-      }
-
-      // download via anchor
+      const blob = doc.output('blob')
       const filename = `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -158,20 +138,12 @@ export function usePDF() {
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)
-      if (isMobile()) {
-        setTimeout(() => {
-          URL.revokeObjectURL(url)
-        }, 5000)
-      } else {
-        setTimeout(() => {
-          URL.revokeObjectURL(url)
-        }, 1000)
-      }
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
       exporting.value = false
-      return { method: 'download' }
+      alert('PDF已导出')
     } catch (e) {
       exporting.value = false
-      throw e
+      alert('PDF导出失败: ' + e.message)
     }
   }
 
