@@ -6,34 +6,14 @@ function isAndroid() {
   return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent)
 }
 
-async function exportFileOnAndroid(blob, filename, label) {
-  const { Filesystem, Directory } = await import('@capacitor/filesystem')
-  const { Share } = await import('@capacitor/share')
-
-  const base64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const r = reader.result
-      if (typeof r === 'string') {
-        resolve(r.split(',')[1])
-      } else {
-        reject(new Error('FileReader result is not a string'))
-      }
-    }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-
-  const result = await Filesystem.writeFile({
-    path: filename,
-    data: base64,
-    directory: Directory.Documents
-  })
-
-  await Share.share({
-    title: label,
-    files: [result.uri]
-  })
+async function shareFile(blob, filename, mime) {
+  const file = new File([blob], filename, { type: mime })
+  try {
+    await navigator.share({ files: [file] })
+    return true
+  } catch {
+    return false
+  }
 }
 
 export const useHistoryStore = defineStore('history', () => {
@@ -75,7 +55,17 @@ export const useHistoryStore = defineStore('history', () => {
       const blob = new Blob([json], { type: 'application/json' })
 
       if (isAndroid()) {
-        await exportFileOnAndroid(blob, filename, 'SOC历史数据')
+        const ok = await shareFile(blob, filename, 'application/json')
+        if (!ok) {
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = filename
+          document.body.appendChild(a)
+          a.click()
+          document.body.removeChild(a)
+          setTimeout(() => URL.revokeObjectURL(url), 3000)
+        }
       } else {
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
@@ -86,7 +76,6 @@ export const useHistoryStore = defineStore('history', () => {
         document.body.removeChild(a)
         setTimeout(() => URL.revokeObjectURL(url), 3000)
       }
-      alert('已导出')
     } catch (e) {
       alert('导出失败: ' + e.message)
     }
