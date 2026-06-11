@@ -128,34 +128,14 @@ function buildPDF(inputs, results, resilience, aiReport) {
   return doc
 }
 
-async function exportFileOnAndroid(blob, filename, label) {
-  const { Filesystem, Directory } = await import('@capacitor/filesystem')
-  const { Share } = await import('@capacitor/share')
-
-  const base64 = await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      const r = reader.result
-      if (typeof r === 'string') {
-        resolve(r.split(',')[1])
-      } else {
-        reject(new Error('FileReader result is not a string'))
-      }
-    }
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(blob)
-  })
-
-  const result = await Filesystem.writeFile({
-    path: filename,
-    data: base64,
-    directory: Directory.Documents
-  })
-
-  await Share.share({
-    title: label,
-    files: [result.uri]
-  })
+async function shareFile(blob, filename, mime) {
+  const file = new File([blob], filename, { type: mime })
+  try {
+    await navigator.share({ files: [file] })
+    return true
+  } catch {
+    return false
+  }
 }
 
 function downloadAnchor(blob, filename) {
@@ -178,12 +158,12 @@ export function usePDF() {
       const filename = `soc-report-${new Date().toISOString().slice(0, 10)}.pdf`
 
       if (isAndroid()) {
-        await exportFileOnAndroid(blob, filename, 'SOC评估报告')
+        const ok = await shareFile(blob, filename, 'application/pdf')
+        if (!ok) downloadAnchor(blob, filename)
       } else {
         downloadAnchor(blob, filename)
       }
       exporting.value = false
-      alert('PDF已导出')
     } catch (e) {
       exporting.value = false
       alert('PDF导出失败: ' + e.message)
