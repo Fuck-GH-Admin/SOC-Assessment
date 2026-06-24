@@ -9,7 +9,7 @@
 | 完成阶段 | **Phase 1–5** ✅ |
 | 总文件 | 39 个 Dart 文件 |
 | 总代码量 | ~5,500 行 Dart |
-| 单元测试 | **54/54** ✅ |
+| 单元测试 | **53/53** ✅ |
 | 代码分析 | **0 error, 0 warning** ✅ |
 | Flutter SDK | `^3.12.2` |
 | 状态管理 | Riverpod 2.6 (Notifier / FutureProvider) |

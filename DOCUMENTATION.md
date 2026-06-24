@@ -163,7 +163,7 @@
 
 ```
 $ flutter test
-  00:02 +54: All tests passed!
+  00:02 +53: All tests passed!
 
   27 — 引擎计算（含 2 组黄金数据集 ±1e-6）
     7 — RecordDao CRUD
