@@ -1,0 +1,107 @@
+import 'dart:convert';
+
+import 'package:drift/drift.dart';
+
+import '../domain/models/calculation_params.dart';
+import '../domain/models/calculation_result.dart';
+import '../domain/models/resilience_result.dart';
+import 'app_database.dart';
+
+class RecordDao {
+  final AppDatabase _db;
+
+  RecordDao(this._db);
+
+  Future<int> insert({
+    required CalculationParams params,
+    required CalculationResult result,
+    ResilienceResult? resilience,
+    String? label,
+  }) =>
+      _db.into(_db.historyRecords).insert(HistoryRecordsCompanion.insert(
+        params: jsonEncode(params.toJson()),
+        result: jsonEncode(result.toJson()),
+        resilience: resilience != null
+            ? Value(jsonEncode(resilience.toJson()))
+            : const Value.absent(),
+        label: label != null ? Value(label) : const Value.absent(),
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      ));
+
+  Future<void> delete(int id) async {
+    await (_db.delete(_db.historyRecords)
+          ..where((t) => t.id.equals(id)))
+        .go();
+  }
+
+  Future<void> deleteByIds(List<int> ids) async {
+    await (_db.delete(_db.historyRecords)
+          ..where((t) => t.id.isIn(ids)))
+        .go();
+  }
+
+  Future<Map<String, dynamic>?> getById(int id) async {
+    final row = await (_db.select(_db.historyRecords)
+          ..where((t) => t.id.equals(id)))
+        .getSingleOrNull();
+    if (row == null) return null;
+    return _decode(row);
+  }
+
+  Future<List<Map<String, dynamic>>> getByIds(List<int> ids) async {
+    final rows = await (_db.select(_db.historyRecords)
+          ..where((t) => t.id.isIn(ids))
+          ..orderBy(
+              [(t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc)]))
+        .get();
+    return rows.map(_decode).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getAll({
+    String? search,
+    int offset = 0,
+    int? limit,
+  }) async {
+    var query = _db.select(_db.historyRecords)
+      ..orderBy(
+          [(t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc)]);
+
+    if (search != null && search.isNotEmpty) {
+      query.where((t) => t.label.contains(search));
+    }
+
+    final rows = await query.get();
+    final start = offset < rows.length ? offset : rows.length;
+    final end = limit != null ? (start + limit) : rows.length;
+    final sliced = rows.sublist(start, end > rows.length ? rows.length : end);
+    return sliced.map(_decode).toList();
+  }
+
+  Future<Map<String, dynamic>?> getLatest() async {
+    final rows = await (_db.select(_db.historyRecords)
+          ..orderBy(
+              [(t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc)])
+          ..limit(1))
+        .get();
+    if (rows.isEmpty) return null;
+    return _decode(rows.first);
+  }
+
+  Future<void> clearAll() async {
+    await _db.delete(_db.historyRecords).go();
+  }
+
+  Map<String, dynamic> _decode(HistoryRecord row) => {
+    'id': row.id,
+    'params': CalculationParams.fromJson(
+        jsonDecode(row.params) as Map<String, dynamic>),
+    'result': CalculationResult.fromJson(
+        jsonDecode(row.result) as Map<String, dynamic>),
+    'resilience': row.resilience != null
+        ? ResilienceResult.fromJson(
+            jsonDecode(row.resilience!) as Map<String, dynamic>)
+        : null,
+    'label': row.label,
+    'createdAt': DateTime.fromMillisecondsSinceEpoch(row.createdAt),
+  };
+}
