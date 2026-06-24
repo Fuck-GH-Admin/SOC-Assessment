@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:soc_app/domain/engine/resilience_assessment.dart';
 import 'package:soc_app/domain/engine/soc_calculator.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/domain/models/calculation_result.dart';
+import 'package:soc_app/domain/models/resilience_result.dart';
+import 'package:soc_app/domain/models/soil_layer.dart';
 
 import 'draft_dao_provider.dart';
 import 'record_dao_provider.dart';
@@ -11,12 +14,14 @@ import 'record_dao_provider.dart';
 class CalculatorState {
   final CalculationParams params;
   final CalculationResult? result;
+  final ResilienceResult? resilience;
   final List<String> errors;
   final bool isCalculated;
 
   const CalculatorState({
     this.params = const CalculationParams(),
     this.result,
+    this.resilience,
     this.errors = const [],
     this.isCalculated = false,
   });
@@ -24,12 +29,14 @@ class CalculatorState {
   CalculatorState copyWith({
     CalculationParams? params,
     CalculationResult? result,
+    ResilienceResult? resilience,
     List<String>? errors,
     bool? isCalculated,
   }) {
     return CalculatorState(
       params: params ?? this.params,
       result: result ?? this.result,
+      resilience: resilience ?? this.resilience,
       errors: errors ?? this.errors,
       isCalculated: isCalculated ?? this.isCalculated,
     );
@@ -109,14 +116,68 @@ class CalculatorNotifier extends Notifier<CalculatorState> {
     final result = computeAll(state.params);
     if (result.success) {
       _draftTimer?.cancel();
+
+      final params = state.params;
+      final soc = result.result!.soc;
+      final depth = params.depth;
+
+      final currentLayer = SoilLayer(
+        layerId: '0-$depth',
+        socValue: soc,
+        bd: params.bd,
+        thickness: depth.toDouble(),
+      );
+
+      final initResult = computeAll(CalculationParams(
+        fert: params.fert,
+        erosion: 0,
+        depth: params.depth,
+        bd: params.bd,
+        ph: params.ph,
+        wc: params.wc,
+        clay: params.clay,
+        tn: params.tn,
+      ));
+      final initSoc = initResult.success ? initResult.result!.soc : soc;
+      final initialLayer = SoilLayer(
+        layerId: '0-$depth',
+        socValue: initSoc,
+        bd: params.bd,
+        thickness: depth.toDouble(),
+      );
+
+      final resilienceParams = CalculationParams(
+        fert: params.fert,
+        erosion: params.erosion,
+        depth: params.depth,
+        bd: params.bd,
+        ph: params.ph,
+        wc: params.wc,
+        clay: params.clay,
+        tn: params.tn,
+        cropBiomass: params.cropBiomass > 0 ? params.cropBiomass : 10.0,
+        strawCarbonRatio: params.strawCarbonRatio,
+        litterCarbonInput: params.litterCarbonInput,
+        soilLayers: [currentLayer],
+        initialLayers: [initialLayer],
+      );
+
+      final resilience = assessResilience(resilienceParams);
+      final resilienceResult = resilience.success ? resilience.result : null;
+
       state = CalculatorState(
-        params: state.params,
+        params: params,
         result: result.result,
+        resilience: resilienceResult,
         errors: [],
         isCalculated: true,
       );
       final dao = await ref.read(recordDaoProvider.future);
-      await dao.insert(params: state.params, result: result.result!);
+      await dao.insert(
+        params: params,
+        result: result.result!,
+        resilience: resilienceResult,
+      );
     } else {
       state = CalculatorState(
         params: state.params,

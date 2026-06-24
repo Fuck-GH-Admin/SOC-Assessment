@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:soc_app/data/pdf_exporter.dart';
+import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/presentation/providers/ai_config_provider.dart';
 import 'package:soc_app/presentation/providers/ai_report_provider.dart';
 import 'package:soc_app/presentation/providers/calculator_provider.dart';
@@ -30,21 +31,53 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class _HomePageState extends ConsumerState<HomePage> {
-  bool _draftChecked = false;
+  late final Map<String, TextEditingController> _ctrls;
   bool _pdfExporting = false;
   int _chartTabIndex = 0;
   final _chartKeys = List.generate(8, (_) => GlobalKey());
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrls = {
+      'bd': TextEditingController(),
+      'ph': TextEditingController(),
+      'wc': TextEditingController(),
+      'clay': TextEditingController(),
+      'tn': TextEditingController(),
+    };
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncCtrlsFromParams(ref.read(calculatorProvider).params);
+      _checkDraft();
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final c in _ctrls.values) { c.dispose(); }
+    super.dispose();
+  }
+
+  void _syncCtrlsFromParams(CalculationParams params) {
+    _ctrls['bd']!.text = params.bd > 0 ? params.bd.toString() : '';
+    _ctrls['ph']!.text = params.ph > 0 ? params.ph.toString() : '';
+    _ctrls['wc']!.text = params.wc > 0 ? params.wc.toString() : '';
+    _ctrls['clay']!.text = params.clay > 0 ? params.clay.toString() : '';
+    _ctrls['tn']!.text = params.tn > 0 ? params.tn.toString() : '';
+    for (final c in _ctrls.values) {
+      if (c.text.isNotEmpty) {
+        c.selection = TextSelection.fromPosition(
+          TextPosition(offset: c.text.length),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(calculatorProvider);
     final aiState = ref.watch(aiReportProvider);
     final theme = Theme.of(context);
-
-    if (!_draftChecked) {
-      _draftChecked = true;
-      _checkDraft();
-    }
 
     return Scaffold(
       appBar: AppBar(
@@ -97,7 +130,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           child: _buildTextField(
                             label: '土壤容重 (g/cm³)',
                             hint: '0.5-2.5',
-                            value: state.params.bd,
+                            controller: _ctrls['bd']!,
                             onChanged: (v) => ref
                                 .read(calculatorProvider.notifier)
                                 .updateBd(v),
@@ -108,7 +141,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           child: _buildTextField(
                             label: 'pH值',
                             hint: '3-11',
-                            value: state.params.ph,
+                            controller: _ctrls['ph']!,
                             onChanged: (v) => ref
                                 .read(calculatorProvider.notifier)
                                 .updatePh(v),
@@ -119,7 +152,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           child: _buildTextField(
                             label: '含水量 (%)',
                             hint: '0-100',
-                            value: state.params.wc,
+                            controller: _ctrls['wc']!,
                             onChanged: (v) => ref
                                 .read(calculatorProvider.notifier)
                                 .updateWc(v),
@@ -130,7 +163,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           child: _buildTextField(
                             label: '黏粉粒含量 (%)',
                             hint: '0-100',
-                            value: state.params.clay,
+                            controller: _ctrls['clay']!,
                             onChanged: (v) => ref
                                 .read(calculatorProvider.notifier)
                                 .updateClay(v),
@@ -141,7 +174,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                           child: _buildTextField(
                             label: '全氮含量 (g/kg)',
                             hint: '0-10',
-                            value: state.params.tn,
+                            controller: _ctrls['tn']!,
                             onChanged: (v) => ref
                                 .read(calculatorProvider.notifier)
                                 .updateTn(v),
@@ -254,25 +287,25 @@ class _HomePageState extends ConsumerState<HomePage> {
                   _buildResultRow(
                     '碳储量',
                     state.isCalculated
-                        ? '${state.result!.carbonStorage} t/ha'
+                        ? '${state.result!.carbonStorage} kg C/m²'
                         : '--',
                   ),
                   _buildResultRow(
                     '碳密度',
                     state.isCalculated
-                        ? '${state.result!.carbonDensity} t/hm²'
+                        ? '${state.result!.carbonDensity} kg C/m³'
                         : '--',
                   ),
                   _buildResultRow(
                     '净变化量',
                     state.isCalculated
-                        ? '${state.result!.netChange} g/kg'
+                        ? '${state.result!.netChange} kg C/m²'
                         : '--',
                   ),
                   _buildResultRow(
                     '恢复速率',
                     state.isCalculated
-                        ? '${state.result!.recoveryRate} g/kg/年'
+                        ? '${state.result!.recoveryRate} kg C/m²/yr'
                         : '--',
                   ),
                   _buildResultRow(
@@ -398,6 +431,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
     if (restore == true && mounted) {
       ref.read(calculatorProvider.notifier).loadDraft(draft);
+      _syncCtrlsFromParams(draft);
     }
   }
 
@@ -439,6 +473,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       final bytes = await PdfExporter.generate(
         params: calcState.params,
         result: calcState.result!,
+        resilience: calcState.resilience,
         chartImages: chartImages,
         aiReport: ref.read(aiReportProvider).streamContent,
       );
@@ -485,7 +520,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget _buildTextField({
     required String label,
     required String hint,
-    required double value,
+    required TextEditingController controller,
     required void Function(double) onChanged,
   }) {
     return Padding(
@@ -497,9 +532,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           border: const OutlineInputBorder(),
         ),
         keyboardType: TextInputType.number,
-        controller: TextEditingController(
-          text: value > 0 ? value.toString() : '',
-        ),
+        controller: controller,
         onChanged: (v) {
           final parsed = double.tryParse(v);
           if (parsed != null) onChanged(parsed);
@@ -523,7 +556,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 }
 
-class _ChartCarousel extends StatelessWidget {
+class _ChartCarousel extends StatefulWidget {
   final List<GlobalKey> chartKeys;
   final int tabIndex;
   final ValueChanged<int> onTabChanged;
@@ -543,41 +576,81 @@ class _ChartCarousel extends StatelessWidget {
   });
 
   @override
+  State<_ChartCarousel> createState() => _ChartCarouselState();
+}
+
+class _ChartCarouselState extends State<_ChartCarousel>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  bool _tabSyncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(
+      length: 8,
+      vsync: this,
+      initialIndex: widget.tabIndex,
+    );
+    _tabController.addListener(() {
+      if (!_tabSyncing && !_tabController.indexIsChanging) {
+        widget.onTabChanged(_tabController.index);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ChartCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.tabIndex != _tabController.index) {
+      _tabSyncing = true;
+      _tabController.index = widget.tabIndex;
+      _tabSyncing = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final charts = <Widget>[
       RepaintBoundary(
-          key: chartKeys[0],
+          key: widget.chartKeys[0],
           child: SingleChildScrollView(
-              child: ErosionBarChart(fert: fert))),
+              child: ErosionBarChart(fert: widget.fert))),
       RepaintBoundary(
-          key: chartKeys[1],
+          key: widget.chartKeys[1],
           child: SingleChildScrollView(
-              child: DepthLineChart(fert: fert, erosion: erosion))),
+              child: DepthLineChart(fert: widget.fert, erosion: widget.erosion))),
       RepaintBoundary(
-          key: chartKeys[2],
+          key: widget.chartKeys[2],
           child: SingleChildScrollView(
-              child: TimeLineChart(fert: fert))),
+              child: TimeLineChart(fert: widget.fert))),
       RepaintBoundary(
-          key: chartKeys[3],
+          key: widget.chartKeys[3],
           child: SingleChildScrollView(
-              child: AssessmentRadarChart(result: result))),
+              child: AssessmentRadarChart(result: widget.result))),
       RepaintBoundary(
-          key: chartKeys[4],
+          key: widget.chartKeys[4],
           child: SingleChildScrollView(
-              child: PoolPieChart(fert: fert, erosion: erosion))),
+              child: PoolPieChart(fert: widget.fert, erosion: widget.erosion))),
       RepaintBoundary(
-          key: chartKeys[5],
+          key: widget.chartKeys[5],
           child: SingleChildScrollView(
-              child: CorrelationScatterChart(fert: fert))),
+              child: CorrelationScatterChart(fert: widget.fert))),
       RepaintBoundary(
-          key: chartKeys[6],
+          key: widget.chartKeys[6],
           child: SingleChildScrollView(
               child: ComparisonFillChart(
-                  fert: fert, erosion: erosion))),
+                  fert: widget.fert, erosion: widget.erosion))),
       RepaintBoundary(
-          key: chartKeys[7],
+          key: widget.chartKeys[7],
           child: SingleChildScrollView(
-              child: HeatmapChart(fert: fert))),
+              child: HeatmapChart(fert: widget.fert))),
     ];
 
     return Column(
@@ -585,6 +658,7 @@ class _ChartCarousel extends StatelessWidget {
         SizedBox(
           height: 36,
           child: TabBar(
+            controller: _tabController,
             isScrollable: true,
             tabAlignment: TabAlignment.start,
             labelStyle: const TextStyle(fontSize: 11),
@@ -598,13 +672,12 @@ class _ChartCarousel extends StatelessWidget {
               Tab(text: '对比'),
               Tab(text: '热力'),
             ],
-            onTap: onTabChanged,
           ),
         ),
         SizedBox(
           height: 280,
           child: IndexedStack(
-            index: tabIndex,
+            index: widget.tabIndex,
             children: charts,
           ),
         ),

@@ -1,10 +1,8 @@
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 
@@ -219,11 +217,4 @@ class PdfExporter {
     return images;
   }
 
-  static Future<void> saveToFile(Uint8List bytes,
-      {String? fileName}) async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File(
-        '${dir.path}/${fileName ?? "soc-report-${DateTime.now().millisecondsSinceEpoch}.pdf"}');
-    await file.writeAsBytes(bytes);
-  }
 }

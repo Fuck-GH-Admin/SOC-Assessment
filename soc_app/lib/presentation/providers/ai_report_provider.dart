@@ -39,6 +39,7 @@ class AiReportState {
 
 class AiReportNotifier extends Notifier<AiReportState> {
   CancelToken? _cancelToken;
+  final AiReportService _service = AiReportService();
 
   @override
   AiReportState build() {
@@ -73,11 +74,10 @@ class AiReportNotifier extends Notifier<AiReportState> {
 
     state = const AiReportState(isGenerating: true);
 
-    final service = AiReportService();
     final buffer = StringBuffer();
 
     try {
-      await for (final chunk in service.generateStream(
+      await for (final chunk in _service.generateStream(
         baseUrl: baseUrl,
         apiKey: apiKey,
         model: model,
