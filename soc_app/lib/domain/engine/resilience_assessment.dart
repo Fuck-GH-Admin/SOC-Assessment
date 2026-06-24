@@ -46,18 +46,18 @@ List<StrawScenario> computeStrawScenarios(
     return (success: false, result: null, errors: ['缺少初始年份土层数据']);
   }
 
-  int _layerStart(String layerId) {
+  int layerStart(String layerId) {
     final parts = layerId.split('-');
     return int.tryParse(parts.first) ?? 0;
   }
 
   final finalPool020 = computeTotalCarbonPool(
-    params.soilLayers.where((l) => _layerStart(l.layerId) < 20).toList(),
+    params.soilLayers.where((l) => layerStart(l.layerId) < 20).toList(),
   );
   final finalPool060 = computeTotalCarbonPool(params.soilLayers);
 
   final initialPool020 = computeTotalCarbonPool(
-    params.initialLayers.where((l) => _layerStart(l.layerId) < 20).toList(),
+    params.initialLayers.where((l) => layerStart(l.layerId) < 20).toList(),
   );
   final initialPool060 = computeTotalCarbonPool(params.initialLayers);
 

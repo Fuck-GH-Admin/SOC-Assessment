@@ -74,10 +74,10 @@ class AiReportService {
         ? '${baseUrl}chat/completions'
         : '$baseUrl/chat/completions';
 
-    Timer? _idleTimer;
-    void _resetIdleTimer() {
-      _idleTimer?.cancel();
-      _idleTimer = Timer(idleTimeout, () {
+    Timer? idleTimer;
+    void resetIdleTimer() {
+      idleTimer?.cancel();
+      idleTimer = Timer(idleTimeout, () {
         cancelToken?.cancel();
       });
     }
@@ -101,10 +101,10 @@ class AiReportService {
       final stringStream = utf8.decoder.bind(stream);
       final lines = const LineSplitter().bind(stringStream);
 
-      _resetIdleTimer();
+      resetIdleTimer();
 
       await for (final line in lines) {
-        _resetIdleTimer();
+        resetIdleTimer();
         if (cancelToken?.isCancelled == true) break;
         if (!line.startsWith('data: ')) continue;
         if (line == 'data: [DONE]') break;
@@ -121,7 +121,7 @@ class AiReportService {
       if (e.type == DioExceptionType.cancel) return;
       rethrow;
     } finally {
-      _idleTimer?.cancel();
+      idleTimer?.cancel();
     }
   }
 }
