@@ -12,6 +12,34 @@ import '../domain/models/calculation_params.dart';
 import '../domain/models/calculation_result.dart';
 import '../domain/models/resilience_result.dart';
 
+/// Rough Unicode range check for common CJK + Latin characters
+/// covered by the SimHei-subset font (3449 common chars).
+bool _isPrintableInFont(int codePoint) {
+  if (codePoint >= 0x20 && codePoint <= 0x7E) return true;
+  if (codePoint >= 0x3000 && codePoint <= 0x303F) return true;
+  if (codePoint >= 0x4E00 && codePoint <= 0x9FFF) return true;
+  if (codePoint >= 0xFF00 && codePoint <= 0xFFEF) return true;
+  if (codePoint >= 0x2000 && codePoint <= 0x206F) return true;
+  if (codePoint >= 0x2100 && codePoint <= 0x214F) return true;
+  if (codePoint >= 0x2E80 && codePoint <= 0x2EFF) return true;
+  if (codePoint >= 0xF900 && codePoint <= 0xFAFF) return true;
+  if (codePoint == 0x0A || codePoint == 0x0D) return true;
+  return false;
+}
+
+/// Replaces characters not covered by the subset font with a safe placeholder.
+String _sanitizeForPdf(String text) {
+  final buf = StringBuffer();
+  for (final rune in text.runes) {
+    if (_isPrintableInFont(rune)) {
+      buf.writeCharCode(rune);
+    } else {
+      buf.write('�');
+    }
+  }
+  return buf.toString();
+}
+
 class PdfExporter {
   static Future<Uint8List> generate({
     required CalculationParams params,
@@ -62,10 +90,10 @@ class PdfExporter {
           pw.SizedBox(height: 16),
           _sectionTitle('AI 评估报告', font),
           pw.Paragraph(
-              text: aiReport
+              text: _sanitizeForPdf(aiReport
                   .replaceAll(RegExp(r'[*#`>\[\]]'), '')
                   .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-                  .trim(),
+                  .trim()),
               style: pw.TextStyle(fontSize: 9, font: font)),
         ],
       ],
@@ -152,14 +180,14 @@ class PdfExporter {
       headers: ['指标', '数值', '单位'],
       data: [
         ['表层碳库(0-20cm)',
-            r.carbonPool_0_20.toStringAsFixed(2), 'kg C/m²'],
+            r.carbonPool020.toStringAsFixed(2), 'kg C/m²'],
         ['剖面碳库(0-60cm)',
-            r.carbonPool_0_60.toStringAsFixed(2), 'kg C/m²'],
-        ['20年净变化量', r.netChange_20yr.toStringAsFixed(2),
+            r.carbonPool060.toStringAsFixed(2), 'kg C/m²'],
+        ['20年净变化量', r.netChange20yr.toStringAsFixed(2),
             'kg C/m²'],
-        ['100年净变化量', r.netChange_100yr.toStringAsFixed(2),
+        ['100年净变化量', r.netChange100yr.toStringAsFixed(2),
             'kg C/m²'],
-        ['年恢复速率', r.recoveryRate_annual.toStringAsFixed(3),
+        ['年恢复速率', r.recoveryRateAnnual.toStringAsFixed(3),
             'kg C/m²/yr'],
         ['恢复状态', r.status, ''],
       ],

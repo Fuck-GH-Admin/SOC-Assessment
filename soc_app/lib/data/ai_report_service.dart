@@ -24,7 +24,7 @@ class AiReportService {
     String? reasoningEffort,
     Map<String, dynamic>? extraThinkingBody,
     CancelToken? cancelToken,
-    Duration timeout = const Duration(seconds: 30),
+    Duration idleTimeout = const Duration(seconds: 60),
   }) {
     return _streamResponse(
       baseUrl: baseUrl,
@@ -35,7 +35,7 @@ class AiReportService {
       reasoningEffort: reasoningEffort,
       extraThinkingBody: extraThinkingBody,
       cancelToken: cancelToken,
-      timeout: timeout,
+      idleTimeout: idleTimeout,
     );
   }
 
@@ -48,7 +48,7 @@ class AiReportService {
     String? reasoningEffort,
     Map<String, dynamic>? extraThinkingBody,
     CancelToken? cancelToken,
-    Duration timeout = const Duration(seconds: 30),
+    Duration idleTimeout = const Duration(seconds: 60),
   }) async* {
     final body = <String, dynamic>{
       'model': model,
@@ -74,6 +74,14 @@ class AiReportService {
         ? '${baseUrl}chat/completions'
         : '$baseUrl/chat/completions';
 
+    Timer? _idleTimer;
+    void _resetIdleTimer() {
+      _idleTimer?.cancel();
+      _idleTimer = Timer(idleTimeout, () {
+        cancelToken?.cancel();
+      });
+    }
+
     try {
       final response = await _dio.post(
         endpoint,
@@ -83,8 +91,7 @@ class AiReportService {
             'Authorization': 'Bearer $apiKey',
           },
           responseType: ResponseType.stream,
-          sendTimeout: timeout,
-          receiveTimeout: timeout,
+          sendTimeout: const Duration(seconds: 30),
         ),
         data: body,
         cancelToken: cancelToken,
@@ -94,7 +101,10 @@ class AiReportService {
       final stringStream = utf8.decoder.bind(stream);
       final lines = const LineSplitter().bind(stringStream);
 
+      _resetIdleTimer();
+
       await for (final line in lines) {
+        _resetIdleTimer();
         if (cancelToken?.isCancelled == true) break;
         if (!line.startsWith('data: ')) continue;
         if (line == 'data: [DONE]') break;
@@ -110,6 +120,8 @@ class AiReportService {
     } on DioException catch (e) {
       if (e.type == DioExceptionType.cancel) return;
       rethrow;
+    } finally {
+      _idleTimer?.cancel();
     }
   }
 }

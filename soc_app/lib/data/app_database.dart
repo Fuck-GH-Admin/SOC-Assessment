@@ -35,6 +35,14 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 1;
 
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+    onCreate: (m) => m.createAll(),
+    onUpgrade: (m, from, to) async {
+      // Add migration steps here when schemaVersion is bumped
+    },
+  );
+
   static Future<AppDatabase> create() async {
     final dir = await getApplicationDocumentsDirectory();
     final dbPath = p.join(dir.path, 'soc_app.db');

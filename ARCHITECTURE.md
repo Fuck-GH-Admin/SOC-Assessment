@@ -86,7 +86,7 @@
 **Widget 层**：
 
 - 8 个图表组件，各自独立 `StatelessWidget`
-- `AiReportCard` — 流式文本 / Markdown / 思考过程 / 错误
+- `AiReportCard` — 流式文本 / flutter_markdown 渲染 Markdown / 思考过程 / 错误
 - `ComparisonRadarChart` — 双数据集叠加雷达图
 
 ## 3. 数据流
