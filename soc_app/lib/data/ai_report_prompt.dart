@@ -7,7 +7,7 @@ const String defaultPrompt = '''你是一位土壤学专家。请根据以下土
 - pH值：${r'${ph}'}
 - 含水量：${r'${wc}'}%
 - 黏+粉粒含量：${r'${clay}'}%
-- 全氮含量：${r'${tn}'}%
+- 全氮含量：${r'${tn}'} g/kg
 - 秸秆生物量：${r'${cropBiomass}'} kg/ha
 - 秸秆碳含量比例：${r'${strawCarbonRatio}'}
 

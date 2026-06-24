@@ -58,7 +58,7 @@ class _ComparePageState extends ConsumerState<ComparePage> {
     'ph': 'pH',
     'wc': '含水(%)',
     'clay': '黏粉粒(%)',
-    'tn': '全氮(%)',
+    'tn': '全氮(g/kg)',
   };
 
   static const _resultLabels = {

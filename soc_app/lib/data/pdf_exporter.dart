@@ -71,7 +71,7 @@ class PdfExporter {
         _paramTable(params, font),
         pw.SizedBox(height: 16),
         _sectionTitle('计算结果', font),
-        _resultTable(result, font),
+        _resultTable(result, resilience, font),
         if (resilience != null) ...[
           pw.SizedBox(height: 16),
           _sectionTitle('土壤恢复力评估', font),
@@ -143,7 +143,10 @@ class PdfExporter {
     );
   }
 
-  static pw.Widget _resultTable(CalculationResult result, pw.Font font) {
+  static pw.Widget _resultTable(CalculationResult result,
+      ResilienceResult? resilience, pw.Font font) {
+    final netChange = resilience?.netChange20yr ?? result.netChange;
+    final recoveryRate = resilience?.recoveryRateAnnual ?? result.recoveryRate;
     return pw.TableHelper.fromTextArray(
       headerCount: 1,
       headers: ['指标', '数值', '单位'],
@@ -153,9 +156,9 @@ class PdfExporter {
             'kg C/m²'],
         ['碳密度', result.carbonDensity.toStringAsFixed(2),
             'kg C/m³'],
-        ['净变化量', result.netChange.toStringAsFixed(2),
+        ['净变化量', netChange.toStringAsFixed(2),
             'kg C/m²'],
-        ['恢复速率', result.recoveryRate.toStringAsFixed(3),
+        ['恢复速率', recoveryRate.toStringAsFixed(3),
             'kg C/m²/yr'],
         ['SOC 损失率', result.lossRate.toStringAsFixed(1), '%'],
       ],
