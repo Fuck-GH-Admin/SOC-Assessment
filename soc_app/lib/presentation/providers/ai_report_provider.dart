@@ -128,6 +128,7 @@ class AiReportNotifier extends Notifier<AiReportState> {
 
   Map<String, dynamic> _buildPromptData(
       CalculationParams params, CalculationResult result) {
+    final resilience = ref.read(calculatorProvider).resilience;
     return {
       'fert': params.fert,
       'erosion': params.erosion,
@@ -141,8 +142,8 @@ class AiReportNotifier extends Notifier<AiReportState> {
       'soc': result.soc,
       'carbonStorage': result.carbonStorage,
       'carbonDensity': result.carbonDensity,
-      'netChange': result.netChange,
-      'recoveryRate': result.recoveryRate,
+      'netChange': resilience?.netChange20yr ?? result.netChange,
+      'recoveryRate': resilience?.recoveryRateAnnual ?? result.recoveryRate,
       'lossRate': result.lossRate,
     };
   }

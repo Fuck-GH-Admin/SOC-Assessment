@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soc_app/domain/engine/soc_calculator.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/domain/models/soil_layer.dart';
+import 'package:soc_app/presentation/providers/calculator_provider.dart';
 
 void main() {
   group('validateInput', () {
@@ -71,7 +72,7 @@ void main() {
       expect(calculateSOC(p70), lessThan(calculateSOC(p0)));
     });
 
-    test('UNF produces lower SOC than F', () {
+    test('fertFactor distinguishes F and UNF when base data are equal', () {
       final pF = CalculationParams(fert: 'F', erosion: 0, depth: 10, bd: 1.3);
       final pUnf = CalculationParams(fert: 'UNF', erosion: 0, depth: 10, bd: 1.3);
       expect(calculateSOC(pUnf), lessThan(calculateSOC(pF)));
@@ -157,6 +158,34 @@ void main() {
       expect(result.result!.netChange, closeTo(8.26, 1e-6));
       expect(result.result!.recoveryRate, closeTo(0.413, 1e-6));
       expect(result.result!.lossRate, closeTo(59.4, 1e-6));
+    });
+  });
+
+  group('splitToLayers', () {
+    test('returns single layer when depth <= 20', () {
+      final layers = splitToLayers(15.0, 1.3, 10);
+      expect(layers.length, 1);
+      expect(layers[0].layerId, '0-10');
+      expect(layers[0].socValue, 15.0);
+      expect(layers[0].thickness, 10.0);
+    });
+
+    test('returns two layers when depth > 20', () {
+      final layers = splitToLayers(10.0, 1.5, 35);
+      expect(layers.length, 2);
+      expect(layers[0].layerId, '0-20');
+      expect(layers[0].socValue, 10.0);
+      expect(layers[0].thickness, 20.0);
+      expect(layers[1].layerId, '20-35');
+      expect(layers[1].socValue, 10.0);
+      expect(layers[1].thickness, 15.0);
+    });
+
+    test('handles depth exactly 20', () {
+      final layers = splitToLayers(12.0, 1.4, 20);
+      expect(layers.length, 1);
+      expect(layers[0].layerId, '0-20');
+      expect(layers[0].thickness, 20.0);
     });
   });
 }

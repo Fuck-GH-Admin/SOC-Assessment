@@ -121,12 +121,7 @@ class CalculatorNotifier extends Notifier<CalculatorState> {
       final soc = result.result!.soc;
       final depth = params.depth;
 
-      final currentLayer = SoilLayer(
-        layerId: '0-$depth',
-        socValue: soc,
-        bd: params.bd,
-        thickness: depth.toDouble(),
-      );
+      final currentLayers = splitToLayers(soc, params.bd, depth);
 
       final initResult = computeAll(CalculationParams(
         fert: params.fert,
@@ -139,12 +134,7 @@ class CalculatorNotifier extends Notifier<CalculatorState> {
         tn: params.tn,
       ));
       final initSoc = initResult.success ? initResult.result!.soc : soc;
-      final initialLayer = SoilLayer(
-        layerId: '0-$depth',
-        socValue: initSoc,
-        bd: params.bd,
-        thickness: depth.toDouble(),
-      );
+      final initialLayers = splitToLayers(initSoc, params.bd, depth);
 
       final resilienceParams = CalculationParams(
         fert: params.fert,
@@ -158,8 +148,8 @@ class CalculatorNotifier extends Notifier<CalculatorState> {
         cropBiomass: params.cropBiomass > 0 ? params.cropBiomass : 10.0,
         strawCarbonRatio: params.strawCarbonRatio,
         litterCarbonInput: params.litterCarbonInput,
-        soilLayers: [currentLayer],
-        initialLayers: [initialLayer],
+        soilLayers: currentLayers,
+        initialLayers: initialLayers,
       );
 
       final resilience = assessResilience(resilienceParams);
@@ -187,6 +177,28 @@ class CalculatorNotifier extends Notifier<CalculatorState> {
       );
     }
   }
+}
+
+List<SoilLayer> splitToLayers(double socValue, double bd, int depthCm) {
+  if (depthCm <= 20) {
+    return [
+      SoilLayer(
+        layerId: '0-$depthCm',
+        socValue: socValue,
+        bd: bd,
+        thickness: depthCm.toDouble(),
+      ),
+    ];
+  }
+  return [
+    SoilLayer(layerId: '0-20', socValue: socValue, bd: bd, thickness: 20.0),
+    SoilLayer(
+      layerId: '20-$depthCm',
+      socValue: socValue,
+      bd: bd,
+      thickness: (depthCm - 20).toDouble(),
+    ),
+  ];
 }
 
 final calculatorProvider =

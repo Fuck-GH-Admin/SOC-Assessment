@@ -299,13 +299,17 @@ class _HomePageState extends ConsumerState<HomePage> {
                   _buildResultRow(
                     '净变化量',
                     state.isCalculated
-                        ? '${state.result!.netChange} kg C/m²'
+                        ? (state.resilience != null
+                            ? '${state.resilience!.netChange20yr} kg C/m²'
+                            : '${state.result!.netChange} kg C/m²*')
                         : '--',
                   ),
                   _buildResultRow(
                     '恢复速率',
                     state.isCalculated
-                        ? '${state.result!.recoveryRate} kg C/m²/yr'
+                        ? (state.resilience != null
+                            ? '${state.resilience!.recoveryRateAnnual} kg C/m²/yr'
+                            : '${state.result!.recoveryRate} kg C/m²/yr*')
                         : '--',
                   ),
                   _buildResultRow(
@@ -447,15 +451,14 @@ class _HomePageState extends ConsumerState<HomePage> {
       if (configured != true || !mounted) return;
     }
     if (!mounted) return;
-    final srv = ref.read(aiConfigProvider);
-    final baseUrl = await srv.readBaseUrl();
-    final model = await srv.readModel();
-    final enableThinking = await srv.readEnableThinking();
-    final reasoningEffort = await srv.readReasoningEffort();
-    final preset = await srv.readPreset();
+    final baseUrl = await service.readBaseUrl();
+    final model = await service.readModel();
+    final enableThinking = await service.readEnableThinking();
+    final reasoningEffort = await service.readReasoningEffort();
+    final preset = await service.readPreset();
     ref.read(aiReportProvider.notifier).generateReport(
           baseUrl: baseUrl,
-          apiKey: await srv.readApiKey() ?? '',
+          apiKey: await service.readApiKey() ?? '',
           model: model,
           enableThinking: enableThinking,
           reasoningEffort: reasoningEffort,
