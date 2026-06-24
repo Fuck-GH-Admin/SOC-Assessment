@@ -24,7 +24,7 @@ const kAiProviderPresets = [
     id: 'deepseek',
     displayName: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com',
-    defaultModel: 'deepseek-v4-pro',
+    defaultModel: 'deepseek-chat',
     supportsThinking: true,
     extraBody: {'thinking': {'type': 'enabled'}},
   ),
@@ -44,7 +44,7 @@ const kAiProviderPresets = [
     id: 'openrouter',
     displayName: 'OpenRouter',
     baseUrl: 'https://openrouter.ai/api/v1',
-    defaultModel: 'deepseek/deepseek-v4-pro',
+    defaultModel: 'deepseek/deepseek-chat',
   ),
   AiProviderPreset(
     id: 'custom',
@@ -181,14 +181,6 @@ class AiConfigService {
   Future<void> writeReasoningEffort(String value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyReasoningEffort, value);
-  }
-
-  // --- Chat endpoint builder ---
-
-  String buildEndpoint(String baseUrl) {
-    final url = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
-    if (url.endsWith('/chat/completions')) return url;
-    return '$url/chat/completions';
   }
 
   // --- Bulk ---

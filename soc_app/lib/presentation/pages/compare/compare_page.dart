@@ -95,7 +95,7 @@ class _ComparePageState extends ConsumerState<ComparePage> {
             onChanged: (v) {
               setState(() {
                 if (v == true) {
-                  _selectedIds.add(id);
+                  if (_selectedIds.length < 5) _selectedIds.add(id);
                 } else {
                   _selectedIds.remove(id);
                 }

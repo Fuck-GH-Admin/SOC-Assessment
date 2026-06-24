@@ -151,12 +151,12 @@ void main() {
         cropBiomass: 8500, strawCarbonRatio: 0.45,
       );
       final result = computeAll(params);
-      expect(result.result!.soc, closeTo(3.78, 1e-6));
-      expect(result.result!.carbonStorage, closeTo(1.13, 1e-6));
-      expect(result.result!.carbonDensity, closeTo(3.24, 1e-6));
-      expect(result.result!.netChange, closeTo(3.22, 1e-6));
-      expect(result.result!.recoveryRate, closeTo(0.161, 1e-6));
-      expect(result.result!.lossRate, closeTo(84.2, 1e-6));
+      expect(result.result!.soc, closeTo(9.7, 1e-6));
+      expect(result.result!.carbonStorage, closeTo(2.91, 1e-6));
+      expect(result.result!.carbonDensity, closeTo(8.31, 1e-6));
+      expect(result.result!.netChange, closeTo(8.26, 1e-6));
+      expect(result.result!.recoveryRate, closeTo(0.413, 1e-6));
+      expect(result.result!.lossRate, closeTo(59.4, 1e-6));
     });
   });
 }

@@ -24,11 +24,6 @@ const Map<String, Map<int, Map<int, double>>> _baseData = {
   },
 };
 
-const Map<int, double> _erosionCoefficients = {
-  0: 1.00, 10: 0.74, 20: 0.49, 30: 0.39,
-  40: 0.52, 50: 0.83, 60: 0.37, 70: 0.31,
-};
-
 const Map<String, double> _fertilizerEffect = {'F': 1.0, 'UNF': 0.92};
 
 List<String> validateInput(CalculationParams params) {
@@ -74,13 +69,9 @@ double? lookupBaseSOC(String fert, int erosion, int depth) {
 }
 
 double calculateSOC(CalculationParams params) {
-  final fert = params.fert;
-  final erosion = params.erosion;
-  final depth = params.depth;
-  final erosionCoeff = _erosionCoefficients[erosion] ?? 1.0;
-  final fertFactor = _fertilizerEffect[fert] ?? 1.0;
-  final baseSOC = _baseData[fert]?[erosion]?[depth] ?? 10.0;
-  return (baseSOC * erosionCoeff * fertFactor).clamp(0, double.infinity);
+  final baseSOC = _baseData[params.fert]?[params.erosion]?[params.depth] ?? 10.0;
+  final fertFactor = _fertilizerEffect[params.fert] ?? 1.0;
+  return (baseSOC * fertFactor).clamp(0, double.infinity);
 }
 
 double calculateCarbonStorage(double soc, double bd, int depthCm) {
@@ -98,6 +89,7 @@ double calculateNetChange(double soc, String fert, int erosion) {
   final fertImpact = fert == 'F' ? 0.05 : -0.02;
   return soc * (1 + fertImpact - erosionImpact);
 }
+
 
 double calculateRecoveryRate(double netChange, [int years = 20]) {
   return (netChange / years).clamp(0, double.infinity);
