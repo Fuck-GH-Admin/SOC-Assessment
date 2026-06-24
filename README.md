@@ -48,7 +48,7 @@ soc_app/lib/
 │   ├── providers/        # Riverpod 状态
 │   ├── pages/            # 页面（首页、历史、设置、对比）
 │   └── widgets/          # 组件（8 图表、AI 报告卡片）
-test/                     # 47 个单元测试
+test/                     # 54 个单元测试
 ```
 
 ## 配置
@@ -64,7 +64,7 @@ test/                     # 47 个单元测试
 
 ```bash
 cd soc_app
-flutter test           # 47 tests, all pass
+flutter test           # 54 tests, all pass
 dart analyze lib/      # 0 error, 0 warning
 ```
 
