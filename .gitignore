@@ -17,6 +17,9 @@ dist-ssr
 *.rar
 *.exe
 
+# Release artifacts (local only, not tracked)
+release/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
