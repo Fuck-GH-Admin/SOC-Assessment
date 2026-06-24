@@ -85,7 +85,7 @@ cd soc_app
 # 调试 APK（无需签名）
 flutter build apk --debug
 
-# 发布 APK（需签名，需接受 Android licenses）
+# 发布 APK（需接受 Android licenses，默认 debug 签名）
 flutter doctor --android-licenses  # 首次需接受
 flutter build apk --release
 ```
@@ -94,15 +94,33 @@ flutter build apk --release
 ```
 build\app\outputs\flutter-apk\
   app-debug.apk    # 调试版
-  app-release.apk  # 发布版（需签名）
+  app-release.apk  # 发布版（默认 debug 签名）
 ```
 
 **关于签名：**
-发布版需配置签名密钥。参考 [Flutter 官方指南](https://docs.flutter.dev/deployment/android#signing-the-app)，在 `android/app/build.gradle.kts` 中配置 `signingConfigs`。
+正式发布需配置签名密钥。参考 [Flutter 官方指南](https://docs.flutter.dev/deployment/android#signing-the-app)，在 `android/app/build.gradle.kts` 中配置 `signingConfigs`。
 
 **注意事项：**
-- Android 构建需要网络访问 `maven.google.com`（可能被墙，需代理或镜像）
-- 若 `cmdline-tools` 缺失，通过 Android Studio 的 SDK Manager 安装
+- Android 构建需要网络访问 `maven.google.com`（国内需代理）
+- 若 `cmdline-tools` 缺失，通过 Android Studio → SDK Manager → SDK Tools 安装
+- 项目路径含中文时，已在 `android/gradle.properties` 中配置 `android.overridePathCheck=true` 绕过限制
+- `android/build.gradle.kts` 中已配置 `subprojects { afterEvaluate { ... compileSdkVersion(36) } }`，无需手动修改
+- `android/gradle.properties` 中已预设 `org.gradle.jvmargs` 代理端口 7890，若你的代理不同需修改：`-Dhttps.proxyPort=7890` → 你的端口
+
+### 代理配置（国内网络必需）
+
+Android 构建需要下载 Gradle 和 Maven 依赖，国内网络通常需要代理：
+
+```powershell
+# 方式一：设置环境变量（推荐）
+$env:HTTP_PROXY = "http://127.0.0.1:7890"
+$env:HTTPS_PROXY = "http://127.0.0.1:7890"
+flutter build apk --release
+
+# 方式二：修改 android/gradle.properties
+# org.gradle.jvmargs 中已包含 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7890
+# 修改代理地址或端口后直接运行
+```
 
 ### Web（渐进式 Web 应用）
 
