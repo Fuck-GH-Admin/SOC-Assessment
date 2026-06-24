@@ -128,7 +128,7 @@ class PdfExporter {
         ['pH值', params.ph.toStringAsFixed(1), ''],
         ['含水量', params.wc.toStringAsFixed(1), '%'],
         ['黏+粉粒', params.clay.toStringAsFixed(1), '%'],
-        ['全氮含量', params.tn.toStringAsFixed(2), '%'],
+        ['全氮含量', params.tn.toStringAsFixed(2), 'g/kg'],
       ],
       headerStyle: pw.TextStyle(
           fontWeight: pw.FontWeight.bold, fontSize: 9, font: font),
