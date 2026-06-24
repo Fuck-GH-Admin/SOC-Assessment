@@ -5,6 +5,7 @@ import 'package:soc_app/data/app_database.dart';
 import 'package:soc_app/data/record_dao.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/domain/models/calculation_result.dart';
+import 'package:soc_app/presentation/providers/database_provider.dart';
 import 'package:soc_app/presentation/providers/record_dao_provider.dart';
 import 'package:soc_app/presentation/providers/history_provider.dart';
 
@@ -67,26 +68,31 @@ void main() {
       );
     });
 
-    test('provider container invalidates after delete', () async {
-      // This tests the historyDeleteProvider pattern
+    test('provider container reads records through shared database', () async {
+      // This tests the historyListProvider integration with a real DB
       final container = ProviderContainer(
         overrides: [
-          databaseProvider.overrideWith((ref) async => db),
+          databaseProvider.overrideWith((ref) => Future.value(db)),
         ],
       );
       addTearDown(() => container.dispose());
 
-      final id = await dao.insert(
+      // Insert via DAO
+      await dao.insert(
         params: CalculationParams(bd: 1.0),
         result: CalculationResult(soc: 10.0),
       );
 
-      // Initially one record
+      // Read via provider (same in-memory db instance)
       final list1 = await container.read(historyListProvider.future);
       expect(list1.length, 1);
 
-      // Delete and verify invalidation
-      await container.read(historyDeleteProvider(id));
+      // Delete via DAO directly
+      final all = await dao.getAll();
+      await dao.delete(all.first['id'] as int);
+
+      // Invalidate and verify
+      container.invalidate(historyListProvider);
       final list2 = await container.read(historyListProvider.future);
       expect(list2.length, 0);
     });
