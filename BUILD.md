@@ -22,7 +22,12 @@
 ```powershell
 # 1. 克隆仓库
 git clone https://github.com/Fuck-GH-Admin/SOC-Assessment.git
-cd SOC-Assessment/soc_app
+cd SOC-Assessment
+
+# （可选）清理旧版残留（Vue 项目），避免干扰
+Remove-Item -Recurse -Force node_modules, dist, dist_electron -ErrorAction SilentlyContinue
+
+cd soc_app
 
 # 2. 获取依赖
 flutter pub get
