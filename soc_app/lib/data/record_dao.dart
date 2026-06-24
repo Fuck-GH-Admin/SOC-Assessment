@@ -45,7 +45,11 @@ class RecordDao {
           ..where((t) => t.id.equals(id)))
         .getSingleOrNull();
     if (row == null) return null;
-    return _decode(row);
+    try {
+      return _decode(row);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<List<Map<String, dynamic>>> getByIds(List<int> ids) async {
@@ -54,7 +58,7 @@ class RecordDao {
           ..orderBy(
               [(t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc)]))
         .get();
-    return rows.map(_decode).toList();
+    return _decodeAll(rows);
   }
 
   Future<List<Map<String, dynamic>>> getAll({
@@ -74,7 +78,7 @@ class RecordDao {
     final start = offset < rows.length ? offset : rows.length;
     final end = limit != null ? (start + limit) : rows.length;
     final sliced = rows.sublist(start, end > rows.length ? rows.length : end);
-    return sliced.map(_decode).toList();
+    return _decodeAll(sliced);
   }
 
   Future<Map<String, dynamic>?> getLatest() async {
@@ -84,11 +88,27 @@ class RecordDao {
           ..limit(1))
         .get();
     if (rows.isEmpty) return null;
-    return _decode(rows.first);
+    try {
+      return _decode(rows.first);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> clearAll() async {
     await _db.delete(_db.historyRecords).go();
+  }
+
+  List<Map<String, dynamic>> _decodeAll(List<HistoryRecord> rows) {
+    final result = <Map<String, dynamic>>[];
+    for (final row in rows) {
+      try {
+        result.add(_decode(row));
+      } catch (_) {
+        // skip corrupted records
+      }
+    }
+    return result;
   }
 
   Map<String, dynamic> _decode(HistoryRecord row) => {

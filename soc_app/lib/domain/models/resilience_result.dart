@@ -59,32 +59,32 @@ class LayerPool {
 }
 
 class ResilienceResult {
-  final double carbonPool_0_20;
-  final double carbonPool_0_60;
-  final double netChange_20yr;
-  final double netChange_100yr;
-  final double recoveryRate_annual;
+  final double carbonPool020;
+  final double carbonPool060;
+  final double netChange20yr;
+  final double netChange100yr;
+  final double recoveryRateAnnual;
   final List<StrawScenario> strawScenarios;
   final List<LayerPool> layerPools;
   final String status;
 
   const ResilienceResult({
-    this.carbonPool_0_20 = 0.0,
-    this.carbonPool_0_60 = 0.0,
-    this.netChange_20yr = 0.0,
-    this.netChange_100yr = 0.0,
-    this.recoveryRate_annual = 0.0,
+    this.carbonPool020 = 0.0,
+    this.carbonPool060 = 0.0,
+    this.netChange20yr = 0.0,
+    this.netChange100yr = 0.0,
+    this.recoveryRateAnnual = 0.0,
     this.strawScenarios = const [],
     this.layerPools = const [],
     this.status = '',
   });
 
   Map<String, dynamic> toJson() => {
-    'carbonPool_0_20': carbonPool_0_20,
-    'carbonPool_0_60': carbonPool_0_60,
-    'netChange_20yr': netChange_20yr,
-    'netChange_100yr': netChange_100yr,
-    'recoveryRate_annual': recoveryRate_annual,
+    'carbonPool_0_20': carbonPool020,
+    'carbonPool_0_60': carbonPool060,
+    'netChange_20yr': netChange20yr,
+    'netChange_100yr': netChange100yr,
+    'recoveryRate_annual': recoveryRateAnnual,
     'strawScenarios': strawScenarios.map((e) => e.toJson()).toList(),
     'layerPools': layerPools.map((e) => e.toJson()).toList(),
     'status': status,
@@ -92,11 +92,11 @@ class ResilienceResult {
 
   factory ResilienceResult.fromJson(Map<String, dynamic> json) =>
       ResilienceResult(
-        carbonPool_0_20: (json['carbonPool_0_20'] as num?)?.toDouble() ?? 0.0,
-        carbonPool_0_60: (json['carbonPool_0_60'] as num?)?.toDouble() ?? 0.0,
-        netChange_20yr: (json['netChange_20yr'] as num?)?.toDouble() ?? 0.0,
-        netChange_100yr: (json['netChange_100yr'] as num?)?.toDouble() ?? 0.0,
-        recoveryRate_annual:
+        carbonPool020: (json['carbonPool_0_20'] as num?)?.toDouble() ?? 0.0,
+        carbonPool060: (json['carbonPool_0_60'] as num?)?.toDouble() ?? 0.0,
+        netChange20yr: (json['netChange_20yr'] as num?)?.toDouble() ?? 0.0,
+        netChange100yr: (json['netChange_100yr'] as num?)?.toDouble() ?? 0.0,
+        recoveryRateAnnual:
             (json['recoveryRate_annual'] as num?)?.toDouble() ?? 0.0,
         strawScenarios: (json['strawScenarios'] as List<dynamic>?)
                 ?.map(

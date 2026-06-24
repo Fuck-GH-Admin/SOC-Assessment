@@ -105,11 +105,12 @@ build\app\outputs\flutter-apk\
 - 若 `cmdline-tools` 缺失，通过 Android Studio → SDK Manager → SDK Tools 安装
 - 项目路径含中文时，已在 `android/gradle.properties` 中配置 `android.overridePathCheck=true` 绕过限制
 - `android/build.gradle.kts` 中已配置 `subprojects { afterEvaluate { ... compileSdkVersion(36) } }`，无需手动修改
-- `android/gradle.properties` 中已预设 `org.gradle.jvmargs` 代理端口 7890，若你的代理不同需修改：`-Dhttps.proxyPort=7890` → 你的端口
+- 项目路径含中文时，已在 `android/gradle.properties` 中配置 `android.overridePathCheck=true` 绕过限制
+- `android/build.gradle.kts` 中已配置 `subprojects { afterEvaluate { ... compileSdkVersion(36) } }`，无需手动修改
 
 ### 代理配置（国内网络必需）
 
-Android 构建需要下载 Gradle 和 Maven 依赖，国内网络通常需要代理：
+Android 构建需要下载 Gradle 和 Maven 依赖，国内网络通常需要代理。仓库不包含硬编码代理，请自行配置：
 
 ```powershell
 # 方式一：设置环境变量（推荐）
@@ -117,9 +118,12 @@ $env:HTTP_PROXY = "http://127.0.0.1:7890"
 $env:HTTPS_PROXY = "http://127.0.0.1:7890"
 flutter build apk --release
 
-# 方式二：修改 android/gradle.properties
-# org.gradle.jvmargs 中已包含 -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=7890
-# 修改代理地址或端口后直接运行
+# 方式二：写入用户级 gradle.properties（不提交到仓库）
+# 编辑 ~/.gradle/gradle.properties:
+# systemProp.http.proxyHost=127.0.0.1
+# systemProp.http.proxyPort=7890
+# systemProp.https.proxyHost=127.0.0.1
+# systemProp.https.proxyPort=7890
 ```
 
 ### Web（渐进式 Web 应用）

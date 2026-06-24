@@ -46,24 +46,24 @@ List<StrawScenario> computeStrawScenarios(
     return (success: false, result: null, errors: ['缺少初始年份土层数据']);
   }
 
-  final testStart = (String layerId) {
+  int _layerStart(String layerId) {
     final parts = layerId.split('-');
     return int.tryParse(parts.first) ?? 0;
-  };
+  }
 
-  final finalPool_0_20 = computeTotalCarbonPool(
-    params.soilLayers.where((l) => testStart(l.layerId) < 20).toList(),
+  final finalPool020 = computeTotalCarbonPool(
+    params.soilLayers.where((l) => _layerStart(l.layerId) < 20).toList(),
   );
-  final finalPool_0_60 = computeTotalCarbonPool(params.soilLayers);
+  final finalPool060 = computeTotalCarbonPool(params.soilLayers);
 
-  final initialPool_0_20 = computeTotalCarbonPool(
-    params.initialLayers.where((l) => testStart(l.layerId) < 20).toList(),
+  final initialPool020 = computeTotalCarbonPool(
+    params.initialLayers.where((l) => _layerStart(l.layerId) < 20).toList(),
   );
-  final initialPool_0_60 = computeTotalCarbonPool(params.initialLayers);
+  final initialPool060 = computeTotalCarbonPool(params.initialLayers);
 
-  final netChange20yr = computeNetChange(finalPool_0_60, initialPool_0_60);
-  final netChange100yr = computeNetChange(finalPool_0_20, initialPool_0_20);
-  final recoveryRate = computeAnnualRecoveryRate(finalPool_0_60, initialPool_0_60, 20);
+  final netChange20yr = computeNetChange(finalPool060, initialPool060);
+  final netChange100yr = computeNetChange(finalPool020, initialPool020);
+  final recoveryRate = computeAnnualRecoveryRate(finalPool060, initialPool060, 20);
 
   final strawScenarios = computeStrawScenarios(
     params.cropBiomass, params.strawCarbonRatio, params.litterCarbonInput,
@@ -87,11 +87,11 @@ List<StrawScenario> computeStrawScenarios(
   return (
     success: true,
     result: ResilienceResult(
-      carbonPool_0_20: double.parse(finalPool_0_20.toStringAsFixed(2)),
-      carbonPool_0_60: double.parse(finalPool_0_60.toStringAsFixed(2)),
-      netChange_20yr: double.parse(netChange20yr.toStringAsFixed(2)),
-      netChange_100yr: double.parse(netChange100yr.toStringAsFixed(2)),
-      recoveryRate_annual: double.parse(recoveryRate.toStringAsFixed(3)),
+      carbonPool020: double.parse(finalPool020.toStringAsFixed(2)),
+      carbonPool060: double.parse(finalPool060.toStringAsFixed(2)),
+      netChange20yr: double.parse(netChange20yr.toStringAsFixed(2)),
+      netChange100yr: double.parse(netChange100yr.toStringAsFixed(2)),
+      recoveryRateAnnual: double.parse(recoveryRate.toStringAsFixed(3)),
       layerPools: layerPools,
       strawScenarios: strawScenarios,
       status: status,

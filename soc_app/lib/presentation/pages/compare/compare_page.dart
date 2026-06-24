@@ -328,15 +328,15 @@ class _ComparePageState extends ConsumerState<ComparePage> {
   String _resilienceValue(ResilienceResult r, String key) {
     switch (key) {
       case 'carbonPool_0_20':
-        return r.carbonPool_0_20.toStringAsFixed(2);
+        return r.carbonPool020.toStringAsFixed(2);
       case 'carbonPool_0_60':
-        return r.carbonPool_0_60.toStringAsFixed(2);
+        return r.carbonPool060.toStringAsFixed(2);
       case 'netChange_20yr':
-        return r.netChange_20yr.toStringAsFixed(2);
+        return r.netChange20yr.toStringAsFixed(2);
       case 'netChange_100yr':
-        return r.netChange_100yr.toStringAsFixed(2);
+        return r.netChange100yr.toStringAsFixed(2);
       case 'recoveryRate_annual':
-        return r.recoveryRate_annual.toStringAsFixed(3);
+        return r.recoveryRateAnnual.toStringAsFixed(3);
       case 'status':
         return r.status;
       default:
