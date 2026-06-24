@@ -5,7 +5,7 @@
 ### 必须
 | 工具 | 版本 | 用途 |
 |------|------|------|
-| Flutter SDK | >=3.44 | 主框架 |
+| Flutter SDK | >=3.44 (已预装于 `%LOCALAPPDATA%\flutter`) | 主框架 |
 | Dart | >=3.12 | Flutter 内置 |
 | Git | 任意 | 源码管理 |
 
@@ -103,8 +103,6 @@ build\app\outputs\flutter-apk\
 **注意事项：**
 - Android 构建需要网络访问 `maven.google.com`（国内需代理）
 - 若 `cmdline-tools` 缺失，通过 Android Studio → SDK Manager → SDK Tools 安装
-- 项目路径含中文时，已在 `android/gradle.properties` 中配置 `android.overridePathCheck=true` 绕过限制
-- `android/build.gradle.kts` 中已配置 `subprojects { afterEvaluate { ... compileSdkVersion(36) } }`，无需手动修改
 - 项目路径含中文时，已在 `android/gradle.properties` 中配置 `android.overridePathCheck=true` 绕过限制
 - `android/build.gradle.kts` 中已配置 `subprojects { afterEvaluate { ... compileSdkVersion(36) } }`，无需手动修改
 

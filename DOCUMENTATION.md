@@ -163,17 +163,19 @@
 
 ```
 $ flutter test
-  00:02 +47: All tests passed!
+  00:02 +54: All tests passed!
 
   27 — 引擎计算（含 2 组黄金数据集 ±1e-6）
-   7 — RecordDao CRUD
-   6 — DraftDao 生命周期
-   7 — AI Report Service（Dio + SSE 流式）
+    7 — RecordDao CRUD
+    6 — DraftDao 生命周期
+    7 — AI Report Service（Dio + SSE 流式）
+    3 — AiReportState（copyWith 行为）
+    3 — HistoryProvider（记录损坏容错 + 集成）
 ```
 
 ### 代码分析
 
 ```
 $ dart analyze lib/
-  3 issues found (全部 info-level, pre-existing)
+  No issues found
 ```
