@@ -11,6 +11,8 @@ flutter run          # 启动桌面端（Windows）
 flutter run -d android   # 启动移动端（Android）
 ```
 
+> 完整编译打包指南见 [BUILD.md](./BUILD.md)
+
 ## 主要功能
 
 - **SOC 计算**：基于施肥处理、侵蚀强度、土壤容重等参数计算 SOC 含量、碳库储量、碳密度、恢复速率等指标
