@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:soc_app/core/theme/theme_provider.dart';
 import 'package:soc_app/data/ai_config_service.dart';
 import 'package:soc_app/presentation/providers/ai_config_provider.dart';
+
+final _kVersion = '1.1.2';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -109,6 +113,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final currentPreset =
         kAiProviderPresets.firstWhere((p) => p.id == _presetId,
             orElse: () => kAiProviderPresets.last);
+    final currentThemeMode = ref.watch(themeModeProvider);
+    final currentSeedColor = ref.watch(seedColorProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
@@ -249,6 +255,129 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('主题', style: Theme.of(context)
+                            .textTheme
+                            .titleLarge),
+                        const SizedBox(height: 16),
+                        Text('配色方案',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: List.generate(
+                            kColorPresets.length,
+                            (i) {
+                              final preset = kColorPresets[i];
+                              final selected =
+                                  preset.color.toARGB32() ==
+                                      currentSeedColor.toARGB32();
+                              return GestureDetector(
+                                onTap: () => ref
+                                    .read(seedColorProvider.notifier)
+                                    .setColor(i),
+                                child: Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: preset.color,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: selected
+                                          ? Theme.of(context)
+                                              .colorScheme
+                                              .primary
+                                          : Colors.transparent,
+                                      width: 3,
+                                    ),
+                                  ),
+                                  child: selected
+                                      ? const Icon(Icons.check,
+                                          color: Colors.white, size: 20)
+                                      : null,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Divider(),
+                        Text('外观模式',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall),
+                        const SizedBox(height: 8),
+                        SegmentedButton<ThemeMode>(
+                          segments: const [
+                            ButtonSegment(
+                              value: ThemeMode.system,
+                              label: Text('跟随系统'),
+                              icon: Icon(Icons.brightness_auto),
+                            ),
+                            ButtonSegment(
+                              value: ThemeMode.light,
+                              label: Text('浅色'),
+                              icon: Icon(Icons.light_mode),
+                            ),
+                            ButtonSegment(
+                              value: ThemeMode.dark,
+                              label: Text('深色'),
+                              icon: Icon(Icons.dark_mode),
+                            ),
+                          ],
+                          selected: {currentThemeMode},
+                          onSelectionChanged: (v) => ref
+                              .read(themeModeProvider.notifier)
+                              .setMode(v.first),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('关于',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge),
+                        const SizedBox(height: 8),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.info_outline),
+                          title: const Text('SOC 土壤碳评估'),
+                          subtitle: Text('v$_kVersion'),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.bug_report_outlined),
+                          title: const Text('反馈问题 / 查看源码'),
+                          subtitle: const Text(
+                              'github.com/Fuck-GH-Admin/SOC-Assessment'),
+                          onTap: () => launchUrl(
+                            Uri.parse(
+                                'https://github.com/Fuck-GH-Admin/SOC-Assessment/issues'),
+                            mode: LaunchMode.externalApplication,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 32),
               ],
             ),
     );
