@@ -50,8 +50,8 @@ class CorrelationScatterChart extends StatelessWidget {
                 ),
                 topTitles: const AxisTitles(
                     sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
+                rightTitles: AxisTitles(
+                    sideTitles: SideTitles(reservedSize: 16, showTitles: false)),
               ),
               borderData: FlBorderData(show: false),
               gridData: const FlGridData(show: true),

@@ -37,11 +37,11 @@ class ComparisonRadarChart extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('土壤碳库多维度对比',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        Text('土壤碳库多维度对比',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         SizedBox(
-          height: 280,
+          height: 300,
           child: RadarChart(
             RadarChartData(
               radarShape: RadarShape.polygon,
@@ -65,8 +65,8 @@ class ComparisonRadarChart extends StatelessWidget {
               ],
               tickCount: 5,
               titleTextStyle:
-                  const TextStyle(fontSize: 11, color: Colors.black87),
-              titlePositionPercentageOffset: 0.15,
+                  TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface),
+              titlePositionPercentageOffset: 0.25,
               getTitle: (idx, _) {
                 const labels = [
                   'SOC含量',
