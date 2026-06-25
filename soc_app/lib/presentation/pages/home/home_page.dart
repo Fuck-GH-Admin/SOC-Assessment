@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:soc_app/core/theme/app_theme.dart';
+import 'package:soc_app/core/theme/theme_provider.dart';
 import 'package:soc_app/data/pdf_exporter.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/presentation/providers/ai_config_provider.dart';
@@ -36,6 +38,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   int _tabIndex = 0;
   int _chartTabIndex = 0;
   final _chartKeys = List.generate(8, (_) => GlobalKey());
+  final _pdfChartKeys = List.generate(8, (_) => GlobalKey());
 
   @override
   void initState() {
@@ -82,8 +85,11 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget build(BuildContext context) {
     final state = ref.watch(calculatorProvider);
     final theme = Theme.of(context);
+    final seedColor = ref.watch(seedColorProvider);
 
-    return Scaffold(
+    return Stack(
+      children: [
+        Scaffold(
       appBar: AppBar(
         title: const Text('SOC 土壤碳评估'),
         actions: [
@@ -135,6 +141,20 @@ class _HomePageState extends ConsumerState<HomePage> {
               label: const Text('计算'),
             )
           : null,
+        ),
+        if (state.isCalculated && state.result != null)
+          Offstage(
+            offstage: true,
+            child: Theme(
+              data: AppTheme.lightTheme(seedColor),
+              child: SizedBox(
+                width: 515,
+                height: 300,
+                child: _buildPdfCharts(state),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
@@ -463,6 +483,38 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
+  Widget _buildPdfCharts(CalculatorState state) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        RepaintBoundary(
+            key: _pdfChartKeys[0],
+            child: ErosionBarChart(fert: state.params.fert)),
+        RepaintBoundary(
+            key: _pdfChartKeys[1],
+            child: DepthLineChart(fert: state.params.fert, erosion: state.params.erosion)),
+        RepaintBoundary(
+            key: _pdfChartKeys[2],
+            child: TimeLineChart(fert: state.params.fert)),
+        RepaintBoundary(
+            key: _pdfChartKeys[3],
+            child: AssessmentRadarChart(result: state.result!)),
+        RepaintBoundary(
+            key: _pdfChartKeys[4],
+            child: PoolPieChart(fert: state.params.fert, erosion: state.params.erosion)),
+        RepaintBoundary(
+            key: _pdfChartKeys[5],
+            child: CorrelationScatterChart(fert: state.params.fert)),
+        RepaintBoundary(
+            key: _pdfChartKeys[6],
+            child: ComparisonFillChart(fert: state.params.fert, erosion: state.params.erosion)),
+        RepaintBoundary(
+            key: _pdfChartKeys[7],
+            child: HeatmapChart(fert: state.params.fert)),
+      ],
+    );
+  }
+
   void _checkDraft() async {
     final dao = await ref.read(draftDaoProvider.future);
     final age = await dao.getAgeMillis();
@@ -529,7 +581,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     setState(() => _pdfExporting = true);
     try {
-      final chartImages = await PdfExporter.captureCharts(_chartKeys);
+      final chartImages = await PdfExporter.captureCharts(_pdfChartKeys);
       final bytes = await PdfExporter.generate(
         params: calcState.params,
         result: calcState.result!,
