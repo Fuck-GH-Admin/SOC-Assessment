@@ -2,7 +2,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:soc_app/domain/engine/soc_calculator.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/domain/models/soil_layer.dart';
-import 'package:soc_app/presentation/providers/calculator_provider.dart';
 
 void main() {
   group('validateInput', () {

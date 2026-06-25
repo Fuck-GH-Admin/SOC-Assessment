@@ -1,5 +1,6 @@
 import '../models/calculation_params.dart';
 import '../models/calculation_result.dart';
+import '../models/soil_layer.dart';
 
 const Map<String, Map<int, Map<int, double>>> _baseData = {
   'F': {
@@ -93,6 +94,28 @@ double calculateNetChange(double soc, String fert, int erosion) {
 
 double calculateRecoveryRate(double netChange, [int years = 20]) {
   return (netChange / years).clamp(0, double.infinity);
+}
+
+List<SoilLayer> splitToLayers(double socValue, double bd, int depthCm) {
+  if (depthCm <= 20) {
+    return [
+      SoilLayer(
+        layerId: '0-$depthCm',
+        socValue: socValue,
+        bd: bd,
+        thickness: depthCm.toDouble(),
+      ),
+    ];
+  }
+  return [
+    SoilLayer(layerId: '0-20', socValue: socValue, bd: bd, thickness: 20.0),
+    SoilLayer(
+      layerId: '20-$depthCm',
+      socValue: socValue,
+      bd: bd,
+      thickness: (depthCm - 20).toDouble(),
+    ),
+  ];
 }
 
 double calculateLossRate(double soc, String fert) {

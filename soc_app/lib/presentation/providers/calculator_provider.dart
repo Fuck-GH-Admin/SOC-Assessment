@@ -6,7 +6,6 @@ import 'package:soc_app/domain/engine/soc_calculator.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/domain/models/calculation_result.dart';
 import 'package:soc_app/domain/models/resilience_result.dart';
-import 'package:soc_app/domain/models/soil_layer.dart';
 
 import 'draft_dao_provider.dart';
 import 'record_dao_provider.dart';
@@ -177,28 +176,6 @@ class CalculatorNotifier extends Notifier<CalculatorState> {
       );
     }
   }
-}
-
-List<SoilLayer> splitToLayers(double socValue, double bd, int depthCm) {
-  if (depthCm <= 20) {
-    return [
-      SoilLayer(
-        layerId: '0-$depthCm',
-        socValue: socValue,
-        bd: bd,
-        thickness: depthCm.toDouble(),
-      ),
-    ];
-  }
-  return [
-    SoilLayer(layerId: '0-20', socValue: socValue, bd: bd, thickness: 20.0),
-    SoilLayer(
-      layerId: '20-$depthCm',
-      socValue: socValue,
-      bd: bd,
-      thickness: (depthCm - 20).toDouble(),
-    ),
-  ];
 }
 
 final calculatorProvider =

@@ -75,7 +75,7 @@ class PdfExporter {
         if (resilience != null) ...[
           pw.SizedBox(height: 16),
           _sectionTitle('土壤恢复力评估', font),
-          _resilienceTable(resilience, font),
+          _resilienceTable(resilience, params.depth, font),
         ],
         pw.SizedBox(height: 16),
         _sectionTitle('数据图表', font),
@@ -175,14 +175,14 @@ class PdfExporter {
     );
   }
 
-  static pw.Widget _resilienceTable(ResilienceResult r, pw.Font font) {
+  static pw.Widget _resilienceTable(ResilienceResult r, int depth, pw.Font font) {
     return pw.TableHelper.fromTextArray(
       headerCount: 1,
       headers: ['指标', '数值', '单位'],
       data: [
         ['表层碳库(0-20cm)',
             r.carbonPool020.toStringAsFixed(2), 'kg C/m²'],
-        ['剖面碳库(0-60cm)',
+        ['剖面碳库(0-${depth}cm)',
             r.carbonPool060.toStringAsFixed(2), 'kg C/m²'],
         ['20年净变化量', r.netChange20yr.toStringAsFixed(2),
             'kg C/m²'],

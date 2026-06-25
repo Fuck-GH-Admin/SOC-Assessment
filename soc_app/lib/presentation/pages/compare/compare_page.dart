@@ -65,7 +65,6 @@ class _ComparePageState extends ConsumerState<ComparePage> {
     'soc': 'SOC(g/kg)',
     'carbonStorage': '碳储量(kg/m²)',
     'carbonDensity': '碳密度(kg/m³)',
-    'netChange': '净变化(kg/m²)',
     'recoveryRate': '恢复速率(kg/m²/yr)',
     'lossRate': '损失率(%)',
   };
@@ -240,7 +239,7 @@ class _ComparePageState extends ConsumerState<ComparePage> {
   Widget _buildResilienceTable(List<Map<String, dynamic>> records) {
     final resilienceLabels = {
       'carbonPool_0_20': '碳库0-20(kg/m²)',
-      'carbonPool_0_60': '碳库0-60(kg/m²)',
+      'carbonPool_0_60': '剖面碳库(kg/m²)',
       'netChange_20yr': '20年净变(kg/m²)',
       'netChange_100yr': '100年净变(kg/m²)',
       'recoveryRate_annual': '年恢复(kg/m²/yr)',
@@ -314,8 +313,6 @@ class _ComparePageState extends ConsumerState<ComparePage> {
         return r.carbonStorage.toStringAsFixed(2);
       case 'carbonDensity':
         return r.carbonDensity.toStringAsFixed(2);
-      case 'netChange':
-        return r.netChange.toStringAsFixed(2);
       case 'recoveryRate':
         return r.recoveryRate.toStringAsFixed(3);
       case 'lossRate':
