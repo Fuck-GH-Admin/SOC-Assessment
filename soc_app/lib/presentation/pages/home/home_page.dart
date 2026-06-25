@@ -45,6 +45,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       'wc': TextEditingController(),
       'clay': TextEditingController(),
       'tn': TextEditingController(),
+      'cropBiomass': TextEditingController(),
     };
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _syncCtrlsFromParams(ref.read(calculatorProvider).params);
@@ -59,11 +60,14 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _syncCtrlsFromParams(CalculationParams params) {
+    final hasData = params.bd > 0;
     _ctrls['bd']!.text = params.bd > 0 ? params.bd.toString() : '';
     _ctrls['ph']!.text = params.ph > 0 ? params.ph.toString() : '';
-    _ctrls['wc']!.text = params.wc > 0 ? params.wc.toString() : '';
-    _ctrls['clay']!.text = params.clay > 0 ? params.clay.toString() : '';
-    _ctrls['tn']!.text = params.tn > 0 ? params.tn.toString() : '';
+    _ctrls['wc']!.text = hasData ? params.wc.toString() : '';
+    _ctrls['clay']!.text = hasData ? params.clay.toString() : '';
+    _ctrls['tn']!.text = hasData ? params.tn.toString() : '';
+    _ctrls['cropBiomass']!.text =
+        hasData ? params.cropBiomass.toStringAsFixed(0) : '';
     for (final c in _ctrls.values) {
       if (c.text.isNotEmpty) {
         c.selection = TextSelection.fromPosition(
@@ -178,6 +182,17 @@ class _HomePageState extends ConsumerState<HomePage> {
                             onChanged: (v) => ref
                                 .read(calculatorProvider.notifier)
                                 .updateTn(v),
+                          ),
+                        ),
+                        SizedBox(
+                          width: wide ? 220 : double.infinity,
+                          child: _buildTextField(
+                            label: '秸秆生物量 (kg/ha)',
+                            hint: '6000-10000',
+                            controller: _ctrls['cropBiomass']!,
+                            onChanged: (v) => ref
+                                .read(calculatorProvider.notifier)
+                                .updateCropBiomass(v),
                           ),
                         ),
                       ],

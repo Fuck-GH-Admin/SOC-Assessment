@@ -1,11 +1,12 @@
 import '../models/calculation_params.dart';
 import '../models/resilience_result.dart';
+import '../models/soil_layer.dart';
 
 double computeCarbonPoolByLayer(double socGkg, double bdGcm3, double thicknessCm) {
   return (socGkg * bdGcm3 * thicknessCm) / 100;
 }
 
-double computeTotalCarbonPool(List<dynamic> layers) {
+double computeTotalCarbonPool(List<SoilLayer> layers) {
   return layers.fold<double>(0, (sum, layer) {
     return sum + computeCarbonPoolByLayer(layer.socValue, layer.bd, layer.thickness);
   });
