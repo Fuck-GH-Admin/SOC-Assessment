@@ -10,34 +10,6 @@ import '../domain/models/calculation_params.dart';
 import '../domain/models/calculation_result.dart';
 import '../domain/models/resilience_result.dart';
 
-/// Rough Unicode range check for common CJK + Latin characters
-/// covered by the SimHei-subset font (3449 common chars).
-bool _isPrintableInFont(int codePoint) {
-  if (codePoint >= 0x20 && codePoint <= 0x7E) return true;
-  if (codePoint >= 0x3000 && codePoint <= 0x303F) return true;
-  if (codePoint >= 0x4E00 && codePoint <= 0x9FFF) return true;
-  if (codePoint >= 0xFF00 && codePoint <= 0xFFEF) return true;
-  if (codePoint >= 0x2000 && codePoint <= 0x206F) return true;
-  if (codePoint >= 0x2100 && codePoint <= 0x214F) return true;
-  if (codePoint >= 0x2E80 && codePoint <= 0x2EFF) return true;
-  if (codePoint >= 0xF900 && codePoint <= 0xFAFF) return true;
-  if (codePoint == 0x0A || codePoint == 0x0D) return true;
-  return false;
-}
-
-/// Replaces characters not covered by the subset font with a safe placeholder.
-String _sanitizeForPdf(String text) {
-  final buf = StringBuffer();
-  for (final rune in text.runes) {
-    if (_isPrintableInFont(rune)) {
-      buf.writeCharCode(rune);
-    } else {
-      buf.write('�');
-    }
-  }
-  return buf.toString();
-}
-
 class PdfExporter {
   static Future<Uint8List> generate({
     required CalculationParams params,
@@ -82,16 +54,19 @@ class PdfExporter {
         for (final image in chartImages) ...[
           pw.SizedBox(height: 12),
           pw.Image(pw.MemoryImage(image),
-              fit: pw.BoxFit.contain, width: 180, height: 105),
+              fit: pw.BoxFit.contain,
+              width: 515,
+              height: 300),
         ],
         if (aiReport != null && aiReport.isNotEmpty) ...[
           pw.SizedBox(height: 16),
           _sectionTitle('AI 评估报告', font),
           pw.Paragraph(
-              text: _sanitizeForPdf(aiReport
-                  .replaceAll(RegExp(r'[*#`>\[\]]'), '')
+              text: aiReport
+                  .replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '')
+                  .replaceAll(RegExp(r'\*{1,2}([^*]+)\*{1,2}'), r'$1')
                   .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-                  .trim()),
+                  .trim(),
               style: pw.TextStyle(fontSize: 9, font: font)),
         ],
       ],

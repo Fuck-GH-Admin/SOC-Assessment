@@ -33,6 +33,7 @@ class HomePage extends ConsumerStatefulWidget {
 class _HomePageState extends ConsumerState<HomePage> {
   late final Map<String, TextEditingController> _ctrls;
   bool _pdfExporting = false;
+  int _tabIndex = 0;
   int _chartTabIndex = 0;
   final _chartKeys = List.generate(8, (_) => GlobalKey());
 
@@ -80,7 +81,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(calculatorProvider);
-    final aiState = ref.watch(aiReportProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -112,312 +112,354 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: IndexedStack(
+        index: _tabIndex,
         children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('参数输入', style: theme.textTheme.titleLarge),
-                  const SizedBox(height: 16),
-                  LayoutBuilder(builder: (context, constraints) {
-                    final wide = constraints.maxWidth > 500;
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 4,
-                      children: [
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '土壤容重 (g/cm³)',
-                            hint: '0.5-2.5',
-                            controller: _ctrls['bd']!,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateBd(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: 'pH值',
-                            hint: '3-11',
-                            controller: _ctrls['ph']!,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updatePh(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '含水量 (%)',
-                            hint: '0-100',
-                            controller: _ctrls['wc']!,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateWc(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '黏粉粒含量 (%)',
-                            hint: '0-100',
-                            controller: _ctrls['clay']!,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateClay(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '全氮含量 (g/kg)',
-                            hint: '0-10',
-                            controller: _ctrls['tn']!,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateTn(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '秸秆生物量 (kg/ha)',
-                            hint: '6000-10000',
-                            controller: _ctrls['cropBiomass']!,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateCropBiomass(v),
-                          ),
-                        ),
-                      ],
-                    );
-                  }),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey(state.params.fert),
-                    initialValue: state.params.fert,
-                    decoration:
-                        const InputDecoration(labelText: '施肥方式'),
-                    items: const [
-                      DropdownMenuItem(value: 'F', child: Text('施肥')),
-                      DropdownMenuItem(
-                          value: 'UNF', child: Text('未施肥')),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) {
-                        ref
-                            .read(calculatorProvider.notifier)
-                            .updateFert(v);
-                      }
-                    },
-                  ),
-                  DropdownButtonFormField<int>(
-                    key: ValueKey(state.params.erosion),
-                    initialValue: state.params.erosion,
-                    decoration:
-                        const InputDecoration(labelText: '侵蚀程度 (cm)'),
-                    items: const [
-                      DropdownMenuItem(value: 0, child: Text('无')),
-                      DropdownMenuItem(
-                          value: 10, child: Text('轻度 (10cm)')),
-                      DropdownMenuItem(value: 20, child: Text('20cm')),
-                      DropdownMenuItem(value: 30, child: Text('30cm')),
-                      DropdownMenuItem(value: 40, child: Text('40cm')),
-                      DropdownMenuItem(value: 50, child: Text('50cm')),
-                      DropdownMenuItem(value: 60, child: Text('60cm')),
-                      DropdownMenuItem(
-                          value: 70, child: Text('重度 (70cm)')),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) {
-                        ref
-                            .read(calculatorProvider.notifier)
-                            .updateErosion(v);
-                      }
-                    },
-                  ),
-                  DropdownButtonFormField<int>(
-                    key: ValueKey(state.params.depth),
-                    initialValue: state.params.depth,
-                    decoration:
-                        const InputDecoration(labelText: '取样深度 (cm)'),
-                    items: const [
-                      DropdownMenuItem(
-                          value: 10, child: Text('表层 (10cm)')),
-                      DropdownMenuItem(value: 25, child: Text('25cm')),
-                      DropdownMenuItem(
-                          value: 35, child: Text('中层 (35cm)')),
-                      DropdownMenuItem(value: 45, child: Text('45cm')),
-                      DropdownMenuItem(
-                          value: 55, child: Text('深层 (55cm)')),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) {
-                        ref
-                            .read(calculatorProvider.notifier)
-                            .updateDepth(v);
-                      }
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (state.errors.isNotEmpty)
-            Card(
-              color: theme.colorScheme.errorContainer,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('输入错误',
-                        style: TextStyle(
-                            color: theme.colorScheme.onErrorContainer)),
-                    ...state.errors.map((e) => Text(e)),
-                  ],
-                ),
-              ),
-            ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('计算结果', style: theme.textTheme.titleLarge),
-                  const SizedBox(height: 16),
-                  _buildResultRow(
-                    'SOC含量',
-                    state.isCalculated
-                        ? '${state.result!.soc} g/kg'
-                        : '--',
-                  ),
-                  _buildResultRow(
-                    '碳储量',
-                    state.isCalculated
-                        ? '${state.result!.carbonStorage} kg C/m²'
-                        : '--',
-                  ),
-                  _buildResultRow(
-                    '碳密度',
-                    state.isCalculated
-                        ? '${state.result!.carbonDensity} kg C/m³'
-                        : '--',
-                  ),
-                  _buildResultRow(
-                    '净变化量',
-                    state.isCalculated
-                        ? (state.resilience != null
-                            ? '${state.resilience!.netChange20yr} kg C/m²'
-                            : '${state.result!.netChange} kg C/m²*')
-                        : '--',
-                  ),
-                  _buildResultRow(
-                    '恢复速率',
-                    state.isCalculated
-                        ? (state.resilience != null
-                            ? '${state.resilience!.recoveryRateAnnual} kg C/m²/yr'
-                            : '${state.result!.recoveryRate} kg C/m²/yr*')
-                        : '--',
-                  ),
-                  _buildResultRow(
-                    '损失率',
-                    state.isCalculated
-                        ? '${state.result!.lossRate} %'
-                        : '--',
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (state.isCalculated) ...[
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('图表分析', style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 16),
-                    _ChartCarousel(
-                      chartKeys: _chartKeys,
-                      tabIndex: _chartTabIndex,
-                      onTabChanged: (i) =>
-                          setState(() => _chartTabIndex = i),
-                      fert: state.params.fert,
-                      erosion: state.params.erosion,
-                      depth: state.params.depth,
-                      result: state.result!,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('AI 评估报告',
-                        style: theme.textTheme.titleLarge),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        FilledButton.icon(
-                          onPressed: aiState.isGenerating
-                              ? null
-                              : () => _generateReport(),
-                          icon: const Icon(Icons.auto_awesome,
-                              size: 18),
-                          label: const Text('生成报告'),
-                        ),
-                        if (aiState.isGenerating) ...[
-                          const SizedBox(width: 8),
-                          OutlinedButton(
-                            onPressed: () => ref
-                                .read(aiReportProvider.notifier)
-                                .cancel(),
-                            child: const Text('取消'),
-                          ),
-                        ],
-                        if (aiState.streamContent.isNotEmpty &&
-                            !aiState.isGenerating) ...[
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: () => ref
-                                .read(aiReportProvider.notifier)
-                                .reset(),
-                            icon: const Icon(Icons.refresh, size: 16),
-                            label: const Text('重新生成'),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    const AiReportCard(),
-                  ],
-                ),
-              ),
-            ),
-          ],
+          _buildCalcTab(state, theme),
+          _buildChartTab(state, theme),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () =>
-            ref.read(calculatorProvider.notifier).calculate(),
-        icon: const Icon(Icons.calculate),
-        label: const Text('计算'),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _tabIndex,
+        onDestinationSelected: (i) => setState(() => _tabIndex = i),
+        destinations: const [
+          NavigationDestination(icon: Icon(Icons.calculate), label: '计算'),
+          NavigationDestination(icon: Icon(Icons.bar_chart), label: '图表'),
+        ],
       ),
+      floatingActionButton: _tabIndex == 0
+          ? FloatingActionButton.extended(
+              onPressed: () =>
+                  ref.read(calculatorProvider.notifier).calculate(),
+              icon: const Icon(Icons.calculate),
+              label: const Text('计算'),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildCalcTab(CalculatorState state, ThemeData theme) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('参数输入', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 16),
+                LayoutBuilder(builder: (context, constraints) {
+                  final wide = constraints.maxWidth > 500;
+                  return Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      SizedBox(
+                        width: wide ? 220 : double.infinity,
+                        child: _buildTextField(
+                          label: '土壤容重 (g/cm³)',
+                          hint: '0.5-2.5',
+                          controller: _ctrls['bd']!,
+                          onChanged: (v) => ref
+                              .read(calculatorProvider.notifier)
+                              .updateBd(v),
+                        ),
+                      ),
+                      SizedBox(
+                        width: wide ? 220 : double.infinity,
+                        child: _buildTextField(
+                          label: 'pH值',
+                          hint: '3-11',
+                          controller: _ctrls['ph']!,
+                          onChanged: (v) => ref
+                              .read(calculatorProvider.notifier)
+                              .updatePh(v),
+                        ),
+                      ),
+                      SizedBox(
+                        width: wide ? 220 : double.infinity,
+                        child: _buildTextField(
+                          label: '含水量 (%)',
+                          hint: '0-100',
+                          controller: _ctrls['wc']!,
+                          onChanged: (v) => ref
+                              .read(calculatorProvider.notifier)
+                              .updateWc(v),
+                        ),
+                      ),
+                      SizedBox(
+                        width: wide ? 220 : double.infinity,
+                        child: _buildTextField(
+                          label: '黏粉粒含量 (%)',
+                          hint: '0-100',
+                          controller: _ctrls['clay']!,
+                          onChanged: (v) => ref
+                              .read(calculatorProvider.notifier)
+                              .updateClay(v),
+                        ),
+                      ),
+                      SizedBox(
+                        width: wide ? 220 : double.infinity,
+                        child: _buildTextField(
+                          label: '全氮含量 (g/kg)',
+                          hint: '0-10',
+                          controller: _ctrls['tn']!,
+                          onChanged: (v) => ref
+                              .read(calculatorProvider.notifier)
+                              .updateTn(v),
+                        ),
+                      ),
+                      SizedBox(
+                        width: wide ? 220 : double.infinity,
+                        child: _buildTextField(
+                          label: '秸秆生物量 (kg/ha)',
+                          hint: '6000-10000',
+                          controller: _ctrls['cropBiomass']!,
+                          onChanged: (v) => ref
+                              .read(calculatorProvider.notifier)
+                              .updateCropBiomass(v),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+                DropdownButtonFormField<String>(
+                  key: ValueKey(state.params.fert),
+                  initialValue: state.params.fert,
+                  decoration:
+                      const InputDecoration(labelText: '施肥方式'),
+                  items: const [
+                    DropdownMenuItem(value: 'F', child: Text('施肥')),
+                    DropdownMenuItem(
+                        value: 'UNF', child: Text('未施肥')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      ref
+                          .read(calculatorProvider.notifier)
+                          .updateFert(v);
+                    }
+                  },
+                ),
+                DropdownButtonFormField<int>(
+                  key: ValueKey(state.params.erosion),
+                  initialValue: state.params.erosion,
+                  decoration:
+                      const InputDecoration(labelText: '侵蚀程度 (cm)'),
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('无')),
+                    DropdownMenuItem(
+                        value: 10, child: Text('轻度 (10cm)')),
+                    DropdownMenuItem(value: 20, child: Text('20cm')),
+                    DropdownMenuItem(value: 30, child: Text('30cm')),
+                    DropdownMenuItem(value: 40, child: Text('40cm')),
+                    DropdownMenuItem(value: 50, child: Text('50cm')),
+                    DropdownMenuItem(value: 60, child: Text('60cm')),
+                    DropdownMenuItem(
+                        value: 70, child: Text('重度 (70cm)')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      ref
+                          .read(calculatorProvider.notifier)
+                          .updateErosion(v);
+                    }
+                  },
+                ),
+                DropdownButtonFormField<int>(
+                  key: ValueKey(state.params.depth),
+                  initialValue: state.params.depth,
+                  decoration:
+                      const InputDecoration(labelText: '取样深度 (cm)'),
+                  items: const [
+                    DropdownMenuItem(
+                        value: 10, child: Text('表层 (10cm)')),
+                    DropdownMenuItem(value: 25, child: Text('25cm')),
+                    DropdownMenuItem(
+                        value: 35, child: Text('中层 (35cm)')),
+                    DropdownMenuItem(value: 45, child: Text('45cm')),
+                    DropdownMenuItem(
+                        value: 55, child: Text('深层 (55cm)')),
+                  ],
+                  onChanged: (v) {
+                    if (v != null) {
+                      ref
+                          .read(calculatorProvider.notifier)
+                          .updateDepth(v);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (state.errors.isNotEmpty)
+          Card(
+            color: theme.colorScheme.errorContainer,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('输入错误',
+                      style: TextStyle(
+                          color: theme.colorScheme.onErrorContainer)),
+                  ...state.errors.map((e) => Text(e)),
+                ],
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('计算结果', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 16),
+                _buildResultRow(
+                  'SOC含量',
+                  state.isCalculated
+                      ? '${state.result!.soc} g/kg'
+                      : '--',
+                ),
+                _buildResultRow(
+                  '碳储量',
+                  state.isCalculated
+                      ? '${state.result!.carbonStorage} kg C/m²'
+                      : '--',
+                ),
+                _buildResultRow(
+                  '碳密度',
+                  state.isCalculated
+                      ? '${state.result!.carbonDensity} kg C/m³'
+                      : '--',
+                ),
+                _buildResultRow(
+                  '净变化量',
+                  state.isCalculated
+                      ? (state.resilience != null
+                          ? '${state.resilience!.netChange20yr} kg C/m²'
+                          : '${state.result!.netChange} kg C/m²*')
+                      : '--',
+                ),
+                _buildResultRow(
+                  '恢复速率',
+                  state.isCalculated
+                      ? (state.resilience != null
+                          ? '${state.resilience!.recoveryRateAnnual} kg C/m²/yr'
+                          : '${state.result!.recoveryRate} kg C/m²/yr*')
+                      : '--',
+                ),
+                _buildResultRow(
+                  '损失率',
+                  state.isCalculated
+                      ? '${state.result!.lossRate} %'
+                      : '--',
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildChartTab(CalculatorState state, ThemeData theme) {
+    if (!state.isCalculated) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.bar_chart, size: 64,
+                color: theme.colorScheme.outline),
+            const SizedBox(height: 16),
+            Text('请先在"计算"页面完成计算',
+                style: theme.textTheme.titleMedium),
+          ],
+        ),
+      );
+    }
+
+    final aiState = ref.watch(aiReportProvider);
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('图表分析', style: theme.textTheme.titleLarge),
+                const SizedBox(height: 16),
+                _ChartCarousel(
+                  chartKeys: _chartKeys,
+                  tabIndex: _chartTabIndex,
+                  onTabChanged: (i) =>
+                      setState(() => _chartTabIndex = i),
+                  fert: state.params.fert,
+                  erosion: state.params.erosion,
+                  depth: state.params.depth,
+                  result: state.result!,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('AI 评估报告',
+                    style: theme.textTheme.titleLarge),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    FilledButton.icon(
+                      onPressed: aiState.isGenerating
+                          ? null
+                          : () => _generateReport(),
+                      icon: const Icon(Icons.auto_awesome,
+                          size: 18),
+                      label: const Text('生成报告'),
+                    ),
+                    if (aiState.isGenerating) ...[
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: () => ref
+                            .read(aiReportProvider.notifier)
+                            .cancel(),
+                        child: const Text('取消'),
+                      ),
+                    ],
+                    if (aiState.streamContent.isNotEmpty &&
+                        !aiState.isGenerating) ...[
+                      const SizedBox(width: 8),
+                      TextButton.icon(
+                        onPressed: () => ref
+                            .read(aiReportProvider.notifier)
+                            .reset(),
+                        icon: const Icon(Icons.refresh, size: 16),
+                        label: const Text('重新生成'),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 8),
+                const AiReportCard(),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
