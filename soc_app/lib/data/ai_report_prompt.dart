@@ -1,6 +1,12 @@
-const String defaultPrompt = '''你是一位土壤学专家。请根据以下土壤有机碳(SOC)评估数据，生成一份专业的中文土壤碳库恢复力评估报告：
+const String systemPrompt = '''你是一位土壤学专家。请根据用户提供的土壤有机碳（SOC）评估数据，生成一份专业的中文土壤碳库恢复力评估报告。
 
-计算参数：
+请包含以下内容：
+1. 数据解读 — 当前碳库状况
+2. 侵蚀影响评估
+3. 未来种植建议
+4. 土壤恢复力综合评价''';
+
+const String defaultPrompt = '''计算参数：
 - 施肥处理：${r'${fert}'}
 - 侵蚀强度：${r'${erosion}'} cm
 - 土壤容重：${r'${bd}'} g/cm³
@@ -17,13 +23,7 @@ const String defaultPrompt = '''你是一位土壤学专家。请根据以下土
 - 碳密度：${r'${carbonDensity}'} kg C/m³
 - 碳库净变化量：${r'${netChange}'} kg C/m²
 - 年恢复速率：${r'${recoveryRate}'} kg C/m²/年
-- SOC损失率：${r'${lossRate}'}%
-
-请包含以下内容：
-1. 数据解读 — 当前碳库状况
-2. 侵蚀影响评估
-3. 未来种植建议
-4. 土壤恢复力综合评价''';
+- SOC损失率：${r'${lossRate}'}%''';
 
 const Map<String, String> fertLabels = {
   'F': '施肥',

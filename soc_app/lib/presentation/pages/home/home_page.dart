@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:soc_app/core/theme/app_theme.dart';
 import 'package:soc_app/core/theme/theme_provider.dart';
 import 'package:soc_app/data/pdf_exporter.dart';
+import 'package:soc_app/data/ai_report_prompt.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/presentation/providers/ai_config_provider.dart';
 import 'package:soc_app/presentation/providers/ai_report_provider.dart';
@@ -592,6 +593,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           baseUrl: baseUrl,
           apiKey: await service.readApiKey() ?? '',
           model: model,
+          systemPrompt: systemPrompt,
           enableThinking: enableThinking,
           reasoningEffort: reasoningEffort,
           extraThinkingBody: enableThinking ? preset.extraBody : null,

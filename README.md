@@ -12,6 +12,7 @@ flutter run -d android   # 启动移动端（Android）
 ```
 
 > 完整编译打包指南见 [BUILD.md](./BUILD.md)
+> **重要**：Release APK 需手动添加 INTERNET 权限，详见 [BUILD.md](./BUILD.md#androidapk)
 
 ## 主要功能
 
@@ -65,7 +66,7 @@ test/                     # 53 个单元测试
 ```bash
 cd soc_app
 flutter test           # 53 tests, all pass
-dart analyze lib/      # 0 error, 0 warning
+dart analyze lib/      # 0 error, 0 warning（仅 test/ 有 3 个 info/warning）
 ```
 
 ## License

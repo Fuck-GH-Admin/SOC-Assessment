@@ -20,6 +20,7 @@ class AiReportService {
     required String apiKey,
     required String model,
     required String prompt,
+    String? systemPrompt,
     bool enableThinking = false,
     String? reasoningEffort,
     Map<String, dynamic>? extraThinkingBody,
@@ -31,6 +32,7 @@ class AiReportService {
       apiKey: apiKey,
       model: model,
       prompt: prompt,
+      systemPrompt: systemPrompt,
       enableThinking: enableThinking,
       reasoningEffort: reasoningEffort,
       extraThinkingBody: extraThinkingBody,
@@ -44,17 +46,23 @@ class AiReportService {
     required String apiKey,
     required String model,
     required String prompt,
+    String? systemPrompt,
     required bool enableThinking,
     String? reasoningEffort,
     Map<String, dynamic>? extraThinkingBody,
     CancelToken? cancelToken,
     Duration idleTimeout = const Duration(seconds: 60),
   }) async* {
+    final messages = <Map<String, String>>[
+      {'role': 'user', 'content': prompt},
+    ];
+    if (systemPrompt != null && systemPrompt.isNotEmpty) {
+      messages.insert(0, {'role': 'system', 'content': systemPrompt});
+    }
+
     final body = <String, dynamic>{
       'model': model,
-      'messages': [
-        {'role': 'user', 'content': prompt},
-      ],
+      'messages': messages,
       'stream': true,
     };
 
@@ -67,7 +75,6 @@ class AiReportService {
       }
     } else {
       body['temperature'] = 0.7;
-      body['max_tokens'] = 2000;
     }
 
     final endpoint = baseUrl.endsWith('/')

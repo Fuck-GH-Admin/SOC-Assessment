@@ -63,6 +63,19 @@
 | OpenRouter | https://openrouter.ai/api/v1 | ❌ |
 | 自定义 | 用户指定 | 取决于提供商 |
 
+### 提示词结构
+
+AI 报告使用双层提示词：
+
+| role | 内容 |
+|------|------|
+| `system` | 专家身份指令 + 4 点报告要求（见 `systemPrompt`） |
+| `user` | 计算参数 + 计算结果（见 `defaultPrompt` + `fillPrompt()`） |
+
+- `systemPrompt` 定义 AI 行为（土壤学专家身份），`defaultPrompt` 定义数据模板
+- 用户可在设置页自定义 `customPrompt`，替换 `defaultPrompt`（不替换 `systemPrompt`）
+- 无 `max_tokens` 限制，非 thinking 模式仅设 `temperature: 0.7` 控制输出风格
+
 ### 思考模式（DeepSeek 专属）
 
 - 推理强度: low / medium / high
@@ -74,7 +87,7 @@
 - 基于 Dio + SSE (Server-Sent Events)
 - `[DONE]` 终止符判定
 - CancelToken 支持中断
-- 错误分类提示（超时 / 网络 / 服务端）
+- 错误分类提示（超时 / 网络 / 服务端、连接错误等）
 
 ### 报告内容
 
@@ -166,11 +179,11 @@ $ flutter test
   00:02 +53: All tests passed!
 
   27 — 引擎计算（含 2 组黄金数据集 ±1e-6）
-    7 — RecordDao CRUD
-    6 — DraftDao 生命周期
-    7 — AI Report Service（Dio + SSE 流式）
-    3 — AiReportState（copyWith 行为）
-    3 — HistoryProvider（记录损坏容错 + 集成）
+   7 — RecordDao CRUD
+   6 — DraftDao 生命周期
+   7 — AI Report Service（Dio + SSE 流式）
+   3 — AiReportState（copyWith 行为）
+   3 — HistoryProvider（记录损坏容错 + 集成）
 ```
 
 ### 代码分析
