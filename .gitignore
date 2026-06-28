@@ -20,6 +20,9 @@ dist-ssr
 # Release artifacts (local only, not tracked)
 release/
 
+# ADB pulled files
+temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

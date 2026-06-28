@@ -127,20 +127,12 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
         ],
       ),
-      // Wrap the body in a Stack.  The second layer is a zero-size OverflowBox
-      // that renders all 8 chart widgets under lightTheme with Opacity(0).
-      //
-      // Why this works:
-      //   • Offstage(true)  → skips paint() entirely → layer stays null
-      //                       → toImage() throws "Null check on null value"
-      //   • Opacity(0)      → paints normally (alpha-blend at 0)
-      //                       → layer is created → toImage() succeeds ✓
-      //
-      // The Positioned(width:0, height:0) + OverflowBox pattern keeps the
-      // hidden layer completely outside the visible layout box so it never
-      // overlaps any real content or intercepts touches (IgnorePointer).
+      // Render 8 chart offscreen (x=5000) so they are always painted
+      // and toImage() works.  Stack is Clip.none so offscreen content is
+      // not clipped.  IgnorePointer prevents accidental taps on the
+      // invisible offscreen region.
       body: Stack(
-        fit: StackFit.expand,
+        clipBehavior: Clip.none,
         children: [
           IndexedStack(
             index: _tabIndex,
@@ -151,24 +143,12 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
           if (state.isCalculated)
             Positioned(
-              left: 0,
+              left: 5000,
               top: 0,
-              width: 0,
-              height: 0,
-              child: OverflowBox(
-                alignment: Alignment.topLeft,
-                minWidth: 600,
-                maxWidth: 600,
-                minHeight: 2400,
-                maxHeight: 2400,
-                child: IgnorePointer(
-                  child: Opacity(
-                    opacity: 0,
-                    child: Theme(
-                      data: AppTheme.lightTheme(seedColor),
-                      child: _buildPdfChartWidgets(state),
-                    ),
-                  ),
+              child: IgnorePointer(
+                child: Theme(
+                  data: AppTheme.lightTheme(seedColor),
+                  child: _buildPdfChartWidgets(state),
                 ),
               ),
             ),
