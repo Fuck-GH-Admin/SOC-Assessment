@@ -18,7 +18,7 @@ class PdfExporter {
     String? aiReport,
     required List<Uint8List> chartImages,
   }) async {
-    final fontData = await rootBundle.load('assets/fonts/SimHei-subset.ttf');
+    final fontData = await rootBundle.load('assets/fonts/SimHei.ttf');
     final font = pw.Font.ttf(fontData);
 
     final pdf = pw.Document();
@@ -184,13 +184,17 @@ class PdfExporter {
       List<GlobalKey> keys) async {
     final images = <Uint8List>[];
     for (final key in keys) {
-      final boundary =
-          key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) continue;
-      final image = await boundary.toImage(pixelRatio: 2.0);
-      final byteData =
-          await image.toByteData(format: ui.ImageByteFormat.png);
-      if (byteData != null) images.add(byteData.buffer.asUint8List());
+      try {
+        final boundary =
+            key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+        if (boundary == null) continue;
+        final image = await boundary.toImage(pixelRatio: 2.0);
+        final byteData =
+            await image.toByteData(format: ui.ImageByteFormat.png);
+        if (byteData != null) images.add(byteData.buffer.asUint8List());
+      } catch (e, st) {
+        debugPrint('PdfExporter.captureCharts: skipped key $key → $e\n$st');
+      }
     }
     return images;
   }

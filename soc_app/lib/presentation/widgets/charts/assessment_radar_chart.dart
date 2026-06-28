@@ -14,6 +14,10 @@ class AssessmentRadarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final dataColor = colorScheme.primary;
+    final onSurface = colorScheme.onSurface;
+
     final data = [
       _normalize(result.soc, 0, 25),
       _normalize(result.carbonStorage, 0, 10),
@@ -25,28 +29,47 @@ class AssessmentRadarChart extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('土壤碳库多维度综合评估',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        Text(
+          '土壤碳库多维度综合评估',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+            color: onSurface,
+          ),
+        ),
         const SizedBox(height: 8),
         SizedBox(
-          height: 300,
+          height: 260,
           child: RadarChart(
             RadarChartData(
               radarShape: RadarShape.polygon,
+              radarBorderData: BorderSide(
+                color: onSurface.withValues(alpha: 0.4),
+                width: 1.0,
+              ),
+              gridBorderData: BorderSide(
+                color: onSurface.withValues(alpha: 0.2),
+                width: 0.8,
+              ),
+              tickBorderData: BorderSide(
+                color: onSurface.withValues(alpha: 0.3),
+                width: 0.8,
+              ),
               dataSets: [
                 RadarDataSet(
-                  fillColor: const Color(0xFF4A9EFF).withValues(alpha: 0.2),
-                  borderColor: const Color(0xFF4A9EFF),
+                  fillColor: dataColor.withValues(alpha: 0.2),
+                  borderColor: dataColor,
                   entryRadius: 3,
-                  dataEntries: data
-                      .map((v) => RadarEntry(value: v))
-                      .toList(),
+                  dataEntries:
+                      data.map((v) => RadarEntry(value: v)).toList(),
                 ),
               ],
               tickCount: 5,
-              titleTextStyle:
-                  TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface),
-              titlePositionPercentageOffset: 0.25,
+              titleTextStyle: TextStyle(
+                fontSize: 11,
+                color: onSurface,
+              ),
+              titlePositionPercentageOffset: 0.15,
               getTitle: (idx, _) {
                 const labels = [
                   'SOC含量',
