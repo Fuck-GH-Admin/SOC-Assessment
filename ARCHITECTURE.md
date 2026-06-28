@@ -57,7 +57,7 @@
 | `record_dao.dart` | Drift 查询 | 历史记录 CRUD、分页、批量 |
 | `draft_dao.dart` | Drift 查询 | 草稿（固定 id=1）、过期检查 |
 | `ai_report_service.dart` | Dio SSE | 流式 API 请求、[DONE] 终止、CancelToken |
-| `ai_report_prompt.dart` | — | 默认提示词模板、fillPrompt() |
+| `ai_report_prompt.dart` | — | 默认提示词模板（systemPrompt + defaultPrompt）、fillPrompt() |
 | `ai_config_service.dart` | flutter_secure_storage + SharedPreferences | 多模型 API 配置持久化 |
 | `pdf_exporter.dart` | pdf 包 | PDF 文档生成、图表截图 |
 | `json_io.dart` | file_picker | JSON 导入/导出 |
@@ -110,6 +110,8 @@
   → _generateReport() 读取 AiConfigService (baseUrl, apiKey, model, thinking params)
   → AiReportNotifier.generateReport()
     → AiReportService.generateStream() — SSE 请求
+      → messages = [{role: system, content: systemPrompt}, {role: user, content: prompt}]
+      → 无 max_tokens（仅 temperature: 0.7）
     → stream 逐 chunk 累积
     → state.streamContent 更新 → AiReportCard 实时渲染
   → [DONE] 终止
@@ -141,6 +143,24 @@ PDF 需要截图所有 8 个图表。TabBarView 使用懒加载，未访问的 T
 
 代价：8 图表同时占用内存。对此工具类 app 可忽略。
 
+### 图表截图：Offscreen Positioned + Clip.none
+
+Flutter 3.44.x 中 `Opacity(0)` 跳过 `paintChild()`，导致 `RepaintBoundary.layer == null` → `toImage()` 抛出空错误。修复方案：
+
+```
+Stack(
+  clipBehavior: Clip.none,          # 允许子组件溢出绘制
+  children: [
+    IndexedStack(...),              # 正常显示的图表轮播
+    Positioned(left: 5000, ...)     # 离屏副本（永远不可见但参与绘制）
+      RepaintBoundary(key: _pdfChartKeys[i])
+        ChartWidget()
+  ]
+)
+```
+
+离屏 `Positioned(left: 5000)` 确保 `paintChild()` 被调用，`layer` 存在，`toImage()` 正常。仅适用于 `Stack` 容器。
+
 ### 截图方案替代 PDF 绘图
 
 手动用 `pdf` 包绘制 8 种图表需 8 倍工作量。RepaintBoundary + `toImage()` 截图方案 1 套代码覆盖全部图表。约 100 行 vs 800+ 行。
@@ -163,6 +183,7 @@ Isar v3 停止维护。Drift 社区活跃，SQL 稳定。
 - `flutter_secure_storage` 使用平台原生加密（Windows DPAPI / Android Keystore）
 - `WindowsOptions(useBackwardCompatibility: false)` 避免 DPAPI 兼容模式
 - 所有 `readApiKey()` 调用包 try/catch，失败降级返回 null
+- Release APK 需在 `main/AndroidManifest.xml` 中手动声明 `<uses-permission android:name="android.permission.INTERNET"/>`（Debug 自动添加，Release 不会）
 
 ## 6. 平台差异
 

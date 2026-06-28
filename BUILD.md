@@ -103,8 +103,9 @@ build\app\outputs\flutter-apk\
 **注意事项：**
 - Android 构建需要网络访问 `maven.google.com`（国内需代理）
 - 若 `cmdline-tools` 缺失，通过 Android Studio → SDK Manager → SDK Tools 安装
-- 项目路径含中文时，已在 `android/gradle.properties` 中配置 `android.overridePathCheck=true` 绕过限制
 - `android/build.gradle.kts` 中已配置 `subprojects { afterEvaluate { ... compileSdkVersion(36) } }`，无需手动修改
+- **Release APK 必须添加 INTERNET 权限**：`android/app/src/main/AndroidManifest.xml` 中需包含 `<uses-permission android:name="android.permission.INTERNET"/>`。Debug 版由 Flutter 自动添加，Release 不会，缺失会导致 `DioExceptionType.connectionError`。
+- **项目路径含中文会导致 Flutter AOT 编译失败**（`Dart snapshot generator failed with exit code 255`），即使 Gradle 通过了路径检查。将项目复制到纯英文路径（如 `C:\dev\soc-app`）再构建可解决。已在 `android/gradle.properties` 中配置 `android.overridePathCheck=true` 仅能绕过 Gradle 检查，Flutter AOT 仍受限。
 
 ### 代理配置（国内网络必需）
 
@@ -148,12 +149,55 @@ flutter build apk --release
 flutter build web --release
 ```
 
+## 发布打包
+
+每次发布需准备 3 个产物，上传至 GitHub Release：
+
+| 产物 | 来源 | 打包方式 |
+|------|------|----------|
+| `soc-app-android-<version>.apk` | `build/app/outputs/flutter-apk/app-release.apk` | `flutter build apk --release` |
+| `soc-app-windows-<version>.zip` | `build/windows/x64/runner/Release/` 下所有文件 | 压缩为 zip |
+| `soc-app-source-<version>.zip` | 仓库根目录（不含 `.git`、`build`、`node_modules`） | `git archive -o source.zip HEAD` |
+
+### 发布流程
+
+```powershell
+# 1. 检查版本号
+# soc_app/pubspec.yaml: version: x.y.z
+
+# 2. 建 tag
+git tag v1.1.3 -f
+git push origin v1.1.3 -f
+
+# 3. 构建 APK（需英文路径）
+cp -r soc_app C:\dev\soc-app  # 复制到英文路径
+cd C:\dev\soc-app
+$env:HTTP_PROXY="http://127.0.0.1:7890"
+$env:HTTPS_PROXY="http://127.0.0.1:7890"
+flutter clean
+flutter pub get
+flutter build apk --release
+
+# 4. 构建 Windows（需 VS 命令行环境）
+flutter build windows --release
+Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath soc-app-windows-<version>.zip
+
+# 5. 打包源码
+git archive -o soc-app-source-<version>.zip HEAD
+
+# 6. 创建 Release（GitHub CLI）
+gh release create v1.1.3 --title "v1.1.3" --notes "变更说明..."
+gh release upload v1.1.3 soc-app-android-<version>.apk
+gh release upload v1.1.3 soc-app-windows-<version>.zip
+gh release upload v1.1.3 soc-app-source-<version>.zip
+```
+
 ## 版本号管理
 
 版本号在 `soc_app/pubspec.yaml` 中定义：
 
 ```yaml
-version: 1.1.0+1   # 语义版本+构建号
+version: 1.1.3+1   # 语义版本+构建号
 ```
 
 - `1.1.0` — 语义版本（major.minor.patch）
