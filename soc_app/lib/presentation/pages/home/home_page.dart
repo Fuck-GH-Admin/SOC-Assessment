@@ -37,7 +37,14 @@ class _HomePageState extends ConsumerState<HomePage> {
   bool _pdfExporting = false;
   int _tabIndex = 0;
   int _chartTabIndex = 0;
+
+  /// Keys for the visible chart carousel (used for on-screen display).
   final _chartKeys = List.generate(8, (_) => GlobalKey());
+
+  /// Separate keys used exclusively for PDF capture.
+  /// The hidden render layer below (Opacity 0 + OverflowBox) is always
+  /// painted under lightTheme, so boundary.layer is never null and
+  /// toImage() never throws "Null check operator used on a null value".
   final _pdfChartKeys = List.generate(8, (_) => GlobalKey());
 
   @override
@@ -59,7 +66,9 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   @override
   void dispose() {
-    for (final c in _ctrls.values) { c.dispose(); }
+    for (final c in _ctrls.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -85,11 +94,11 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget build(BuildContext context) {
     final state = ref.watch(calculatorProvider);
     final theme = Theme.of(context);
+
+    // Read the current seed colour so the hidden layer can use lightTheme.
     final seedColor = ref.watch(seedColorProvider);
 
-    return Stack(
-      children: [
-        Scaffold(
+    return Scaffold(
       appBar: AppBar(
         title: const Text('SOC 土壤碳评估'),
         actions: [
@@ -118,11 +127,51 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
         ],
       ),
-      body: IndexedStack(
-        index: _tabIndex,
+      // Wrap the body in a Stack.  The second layer is a zero-size OverflowBox
+      // that renders all 8 chart widgets under lightTheme with Opacity(0).
+      //
+      // Why this works:
+      //   • Offstage(true)  → skips paint() entirely → layer stays null
+      //                       → toImage() throws "Null check on null value"
+      //   • Opacity(0)      → paints normally (alpha-blend at 0)
+      //                       → layer is created → toImage() succeeds ✓
+      //
+      // The Positioned(width:0, height:0) + OverflowBox pattern keeps the
+      // hidden layer completely outside the visible layout box so it never
+      // overlaps any real content or intercepts touches (IgnorePointer).
+      body: Stack(
+        fit: StackFit.expand,
         children: [
-          _buildCalcTab(state, theme),
-          _buildChartTab(state, theme),
+          IndexedStack(
+            index: _tabIndex,
+            children: [
+              _buildCalcTab(state, theme),
+              _buildChartTab(state, theme),
+            ],
+          ),
+          if (state.isCalculated)
+            Positioned(
+              left: 0,
+              top: 0,
+              width: 0,
+              height: 0,
+              child: OverflowBox(
+                alignment: Alignment.topLeft,
+                minWidth: 600,
+                maxWidth: 600,
+                minHeight: 2400,
+                maxHeight: 2400,
+                child: IgnorePointer(
+                  child: Opacity(
+                    opacity: 0,
+                    child: Theme(
+                      data: AppTheme.lightTheme(seedColor),
+                      child: _buildPdfChartWidgets(state),
+                    ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -141,19 +190,61 @@ class _HomePageState extends ConsumerState<HomePage> {
               label: const Text('计算'),
             )
           : null,
+    );
+  }
+
+  // All 8 charts rendered in a Column at a fixed 600 × 300 size each.
+  // These are wrapped in RepaintBoundary with _pdfChartKeys so that
+  // PdfExporter.captureCharts() can call toImage() on each.
+  Widget _buildPdfChartWidgets(CalculatorState state) {
+    const w = 600.0;
+    const h = 300.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RepaintBoundary(
+          key: _pdfChartKeys[0],
+          child: SizedBox(width: w, height: h,
+              child: ErosionBarChart(fert: state.params.fert)),
         ),
-        if (state.isCalculated && state.result != null)
-          Offstage(
-            offstage: true,
-            child: Theme(
-              data: AppTheme.lightTheme(seedColor),
-              child: SizedBox(
-                width: 515,
-                height: 300,
-                child: _buildPdfCharts(state),
-              ),
-            ),
-          ),
+        RepaintBoundary(
+          key: _pdfChartKeys[1],
+          child: SizedBox(width: w, height: h,
+              child: DepthLineChart(
+                  fert: state.params.fert, erosion: state.params.erosion)),
+        ),
+        RepaintBoundary(
+          key: _pdfChartKeys[2],
+          child: SizedBox(width: w, height: h,
+              child: TimeLineChart(fert: state.params.fert)),
+        ),
+        RepaintBoundary(
+          key: _pdfChartKeys[3],
+          child: SizedBox(width: w, height: h,
+              child: AssessmentRadarChart(result: state.result!)),
+        ),
+        RepaintBoundary(
+          key: _pdfChartKeys[4],
+          child: SizedBox(width: w, height: h,
+              child: PoolPieChart(
+                  fert: state.params.fert, erosion: state.params.erosion)),
+        ),
+        RepaintBoundary(
+          key: _pdfChartKeys[5],
+          child: SizedBox(width: w, height: h,
+              child: CorrelationScatterChart(fert: state.params.fert)),
+        ),
+        RepaintBoundary(
+          key: _pdfChartKeys[6],
+          child: SizedBox(width: w, height: h,
+              child: ComparisonFillChart(
+                  fert: state.params.fert, erosion: state.params.erosion)),
+        ),
+        RepaintBoundary(
+          key: _pdfChartKeys[7],
+          child: SizedBox(width: w, height: h,
+              child: HeatmapChart(fert: state.params.fert)),
+        ),
       ],
     );
   }
@@ -252,14 +343,11 @@ class _HomePageState extends ConsumerState<HomePage> {
                       const InputDecoration(labelText: '施肥方式'),
                   items: const [
                     DropdownMenuItem(value: 'F', child: Text('施肥')),
-                    DropdownMenuItem(
-                        value: 'UNF', child: Text('未施肥')),
+                    DropdownMenuItem(value: 'UNF', child: Text('未施肥')),
                   ],
                   onChanged: (v) {
                     if (v != null) {
-                      ref
-                          .read(calculatorProvider.notifier)
-                          .updateFert(v);
+                      ref.read(calculatorProvider.notifier).updateFert(v);
                     }
                   },
                 ),
@@ -270,15 +358,13 @@ class _HomePageState extends ConsumerState<HomePage> {
                       const InputDecoration(labelText: '侵蚀程度 (cm)'),
                   items: const [
                     DropdownMenuItem(value: 0, child: Text('无')),
-                    DropdownMenuItem(
-                        value: 10, child: Text('轻度 (10cm)')),
+                    DropdownMenuItem(value: 10, child: Text('轻度 (10cm)')),
                     DropdownMenuItem(value: 20, child: Text('20cm')),
                     DropdownMenuItem(value: 30, child: Text('30cm')),
                     DropdownMenuItem(value: 40, child: Text('40cm')),
                     DropdownMenuItem(value: 50, child: Text('50cm')),
                     DropdownMenuItem(value: 60, child: Text('60cm')),
-                    DropdownMenuItem(
-                        value: 70, child: Text('重度 (70cm)')),
+                    DropdownMenuItem(value: 70, child: Text('重度 (70cm)')),
                   ],
                   onChanged: (v) {
                     if (v != null) {
@@ -294,14 +380,11 @@ class _HomePageState extends ConsumerState<HomePage> {
                   decoration:
                       const InputDecoration(labelText: '取样深度 (cm)'),
                   items: const [
-                    DropdownMenuItem(
-                        value: 10, child: Text('表层 (10cm)')),
+                    DropdownMenuItem(value: 10, child: Text('表层 (10cm)')),
                     DropdownMenuItem(value: 25, child: Text('25cm')),
-                    DropdownMenuItem(
-                        value: 35, child: Text('中层 (35cm)')),
+                    DropdownMenuItem(value: 35, child: Text('中层 (35cm)')),
                     DropdownMenuItem(value: 45, child: Text('45cm')),
-                    DropdownMenuItem(
-                        value: 55, child: Text('深层 (55cm)')),
+                    DropdownMenuItem(value: 55, child: Text('深层 (55cm)')),
                   ],
                   onChanged: (v) {
                     if (v != null) {
@@ -342,9 +425,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 const SizedBox(height: 16),
                 _buildResultRow(
                   'SOC含量',
-                  state.isCalculated
-                      ? '${state.result!.soc} g/kg'
-                      : '--',
+                  state.isCalculated ? '${state.result!.soc} g/kg' : '--',
                 ),
                 _buildResultRow(
                   '碳储量',
@@ -394,8 +475,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.bar_chart, size: 64,
-                color: theme.colorScheme.outline),
+            Icon(Icons.bar_chart, size: 64, color: theme.colorScheme.outline),
             const SizedBox(height: 16),
             Text('请先在"计算"页面完成计算',
                 style: theme.textTheme.titleMedium),
@@ -420,8 +500,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 _ChartCarousel(
                   chartKeys: _chartKeys,
                   tabIndex: _chartTabIndex,
-                  onTabChanged: (i) =>
-                      setState(() => _chartTabIndex = i),
+                  onTabChanged: (i) => setState(() => _chartTabIndex = i),
                   fert: state.params.fert,
                   erosion: state.params.erosion,
                   depth: state.params.depth,
@@ -438,8 +517,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('AI 评估报告',
-                    style: theme.textTheme.titleLarge),
+                Text('AI 评估报告', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 16),
                 Row(
                   children: [
@@ -447,16 +525,14 @@ class _HomePageState extends ConsumerState<HomePage> {
                       onPressed: aiState.isGenerating
                           ? null
                           : () => _generateReport(),
-                      icon: const Icon(Icons.auto_awesome,
-                          size: 18),
+                      icon: const Icon(Icons.auto_awesome, size: 18),
                       label: const Text('生成报告'),
                     ),
                     if (aiState.isGenerating) ...[
                       const SizedBox(width: 8),
                       OutlinedButton(
-                        onPressed: () => ref
-                            .read(aiReportProvider.notifier)
-                            .cancel(),
+                        onPressed: () =>
+                            ref.read(aiReportProvider.notifier).cancel(),
                         child: const Text('取消'),
                       ),
                     ],
@@ -464,9 +540,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                         !aiState.isGenerating) ...[
                       const SizedBox(width: 8),
                       TextButton.icon(
-                        onPressed: () => ref
-                            .read(aiReportProvider.notifier)
-                            .reset(),
+                        onPressed: () =>
+                            ref.read(aiReportProvider.notifier).reset(),
                         icon: const Icon(Icons.refresh, size: 16),
                         label: const Text('重新生成'),
                       ),
@@ -479,38 +554,6 @@ class _HomePageState extends ConsumerState<HomePage> {
             ),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildPdfCharts(CalculatorState state) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        RepaintBoundary(
-            key: _pdfChartKeys[0],
-            child: ErosionBarChart(fert: state.params.fert)),
-        RepaintBoundary(
-            key: _pdfChartKeys[1],
-            child: DepthLineChart(fert: state.params.fert, erosion: state.params.erosion)),
-        RepaintBoundary(
-            key: _pdfChartKeys[2],
-            child: TimeLineChart(fert: state.params.fert)),
-        RepaintBoundary(
-            key: _pdfChartKeys[3],
-            child: AssessmentRadarChart(result: state.result!)),
-        RepaintBoundary(
-            key: _pdfChartKeys[4],
-            child: PoolPieChart(fert: state.params.fert, erosion: state.params.erosion)),
-        RepaintBoundary(
-            key: _pdfChartKeys[5],
-            child: CorrelationScatterChart(fert: state.params.fert)),
-        RepaintBoundary(
-            key: _pdfChartKeys[6],
-            child: ComparisonFillChart(fert: state.params.fert, erosion: state.params.erosion)),
-        RepaintBoundary(
-            key: _pdfChartKeys[7],
-            child: HeatmapChart(fert: state.params.fert)),
       ],
     );
   }
@@ -581,6 +624,10 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     setState(() => _pdfExporting = true);
     try {
+      // Use _pdfChartKeys (from the always-painted Opacity(0) layer) instead
+      // of _chartKeys (from the IndexedStack carousel).  The carousel only
+      // paints the currently visible chart tab, so toImage() on the others
+      // would throw "Null check operator used on a null value".
       final chartImages = await PdfExporter.captureCharts(_pdfChartKeys);
       final bytes = await PdfExporter.generate(
         params: calcState.params,
@@ -737,7 +784,8 @@ class _ChartCarouselState extends State<_ChartCarousel>
       RepaintBoundary(
           key: widget.chartKeys[1],
           child: SingleChildScrollView(
-              child: DepthLineChart(fert: widget.fert, erosion: widget.erosion))),
+              child: DepthLineChart(
+                  fert: widget.fert, erosion: widget.erosion))),
       RepaintBoundary(
           key: widget.chartKeys[2],
           child: SingleChildScrollView(
@@ -749,7 +797,8 @@ class _ChartCarouselState extends State<_ChartCarousel>
       RepaintBoundary(
           key: widget.chartKeys[4],
           child: SingleChildScrollView(
-              child: PoolPieChart(fert: widget.fert, erosion: widget.erosion))),
+              child: PoolPieChart(
+                  fert: widget.fert, erosion: widget.erosion))),
       RepaintBoundary(
           key: widget.chartKeys[5],
           child: SingleChildScrollView(
