@@ -22,7 +22,7 @@ class SocApp extends ConsumerWidget {
     final seedColor = ref.watch(seedColorProvider);
 
     return MaterialApp(
-      title: 'SOC 土壤碳评估',
+      title: '碳盾 SOC-Shield',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme(seedColor),
       darkTheme: AppTheme.darkTheme(seedColor),
