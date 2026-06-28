@@ -1,4 +1,4 @@
-# SOC 土壤有机碳评估系统
+# 碳盾 SOC-Shield — 土壤有机碳评估系统
 
 基于 Flutter 的跨平台（Android / Windows）土壤有机碳（SOC）评估工具，支持参数计算、多维度图表分析、AI 报告生成与 PDF 导出。
 

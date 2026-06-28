@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.soc" "\0"
-            VALUE "FileDescription", "soc_app" "\0"
+            VALUE "CompanyName", "SOC-Shield" "\0"
+            VALUE "FileDescription", "SOC-Shield" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "soc_app" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.soc. All rights reserved." "\0"
-            VALUE "OriginalFilename", "soc_app.exe" "\0"
-            VALUE "ProductName", "soc_app" "\0"
+            VALUE "InternalName", "SOC-Shield" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 SOC-Shield. All rights reserved." "\0"
+            VALUE "OriginalFilename", "SOC-Shield.exe" "\0"
+            VALUE "ProductName", "SOC-Shield" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
