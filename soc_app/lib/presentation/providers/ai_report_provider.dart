@@ -75,7 +75,8 @@ class AiReportNotifier extends Notifier<AiReportState> {
 
     state = const AiReportState(isGenerating: true);
 
-    final buffer = StringBuffer();
+    final contentBuffer = StringBuffer();
+    final reasoningBuffer = StringBuffer();
 
     try {
       await for (final chunk in _service.generateStream(
@@ -89,14 +90,36 @@ class AiReportNotifier extends Notifier<AiReportState> {
         extraThinkingBody: extraThinkingBody,
         cancelToken: _cancelToken,
       )) {
-        buffer.write(chunk);
-        state = state.copyWith(streamContent: buffer.toString());
+        if (chunk.content != null && chunk.content!.isNotEmpty) {
+          contentBuffer.write(chunk.content);
+        }
+        if (chunk.reasoningContent != null &&
+            chunk.reasoningContent!.isNotEmpty) {
+          reasoningBuffer.write(chunk.reasoningContent);
+        }
+        state = state.copyWith(
+          streamContent: contentBuffer.toString(),
+          reasoningContent: reasoningBuffer.toString().isEmpty
+              ? null
+              : reasoningBuffer.toString(),
+        );
       }
-      state = state.copyWith(isGenerating: false, streamContent: buffer.toString());
+      state = state.copyWith(
+        isGenerating: false,
+        streamContent: contentBuffer.toString(),
+        reasoningContent: reasoningBuffer.toString().isEmpty
+            ? null
+            : reasoningBuffer.toString(),
+      );
     } on DioException catch (e) {
       if (e.type == DioExceptionType.cancel) return;
       final msg = _formatError(e);
       state = state.copyWith(isGenerating: false, error: msg);
+    } on TimeoutException {
+      state = state.copyWith(
+        isGenerating: false,
+        error: 'AI 响应空闲超时，已生成内容可能不完整',
+      );
     } catch (e) {
       state = state.copyWith(isGenerating: false, error: e.toString());
     }
