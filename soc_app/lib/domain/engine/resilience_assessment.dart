@@ -62,8 +62,10 @@ List<StrawScenario> computeStrawScenarios(
   );
   final initialPool060 = computeTotalCarbonPool(params.initialLayers);
 
+  // 时间尺度统一使用全剖面(0-60cm)碳池，保证 20yr/100yr/recoveryRate 口径一致。
+  // 修复前 netChange20yr 用 060 池、netChange100yr 用 020 池，三者口径不统一。
   final netChange20yr = computeNetChange(finalPool060, initialPool060);
-  final netChange100yr = computeNetChange(finalPool020, initialPool020);
+  final netChange100yr = computeNetChange(finalPool060, initialPool060);
   final recoveryRate = computeAnnualRecoveryRate(finalPool060, initialPool060, 20);
 
   final strawScenarios = computeStrawScenarios(
