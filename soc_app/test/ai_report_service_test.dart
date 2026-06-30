@@ -7,8 +7,6 @@ import 'package:soc_app/data/ai_report_service.dart';
 
 class MockDio extends Mock implements Dio {}
 
-
-
 void main() {
   late MockDio mockDio;
   late AiReportService service;
@@ -46,17 +44,20 @@ void main() {
             cancelToken: any(named: 'cancelToken'),
           )).thenAnswer((_) async => response);
 
-      final result = <String>[];
+      final contents = <String?>[];
+      final reasonings = <String?>[];
       await for (final chunk in service.generateStream(
         baseUrl: testBaseUrl,
         apiKey: testApiKey,
         model: testModel,
         prompt: testPrompt,
       )) {
-        result.add(chunk);
+        contents.add(chunk.content);
+        reasonings.add(chunk.reasoningContent);
       }
 
-      expect(result, ['你好', '世界']);
+      expect(contents.where((c) => c != null), ['你好', '世界']);
+      expect(reasonings.every((r) => r == null), isTrue);
     });
 
     test('[DONE] 终止符正确停止流', () async {
@@ -72,18 +73,17 @@ void main() {
             cancelToken: any(named: 'cancelToken'),
           )).thenAnswer((_) async => response);
 
-      final result = <String>[];
+      final contents = <String?>[];
       await for (final chunk in service.generateStream(
         baseUrl: testBaseUrl,
         apiKey: testApiKey,
         model: testModel,
         prompt: testPrompt,
       )) {
-        result.add(chunk);
+        contents.add(chunk.content);
       }
 
-      expect(result, ['第一段']);
-      expect(result.length, 1);
+      expect(contents.where((c) => c != null), ['第一段']);
     });
 
     test('非 data: 前缀的行被忽略', () async {
@@ -99,17 +99,17 @@ void main() {
             cancelToken: any(named: 'cancelToken'),
           )).thenAnswer((_) async => response);
 
-      final result = <String>[];
+      final contents = <String?>[];
       await for (final chunk in service.generateStream(
         baseUrl: testBaseUrl,
         apiKey: testApiKey,
         model: testModel,
         prompt: testPrompt,
       )) {
-        result.add(chunk);
+        contents.add(chunk.content);
       }
 
-      expect(result, ['内容']);
+      expect(contents.where((c) => c != null), ['内容']);
     });
 
     test('DioException.cancel 被静默处理', () async {
@@ -126,7 +126,7 @@ void main() {
         ),
       );
 
-      final result = <String>[];
+      final chunks = <AiStreamChunk>[];
       await for (final chunk in service.generateStream(
         baseUrl: testBaseUrl,
         apiKey: testApiKey,
@@ -134,10 +134,10 @@ void main() {
         prompt: testPrompt,
         cancelToken: cancelToken,
       )) {
-        result.add(chunk);
+        chunks.add(chunk);
       }
 
-      expect(result, isEmpty);
+      expect(chunks, isEmpty);
     });
 
     test('网络错误向上传播', () async {
@@ -168,7 +168,6 @@ void main() {
     });
 
     test('partial chunk（跨行分割）正确处理', () async {
-      // SSE 可能将一条 data 分割成多行
       final response = _makeResponse(
         'data: {"choices":[{"delta":{"content":"完整"}}]}\n'
         'data: [DONE]\n',
@@ -180,17 +179,17 @@ void main() {
             cancelToken: any(named: 'cancelToken'),
           )).thenAnswer((_) async => response);
 
-      final result = <String>[];
+      final contents = <String?>[];
       await for (final chunk in service.generateStream(
         baseUrl: testBaseUrl,
         apiKey: testApiKey,
         model: testModel,
         prompt: testPrompt,
       )) {
-        result.add(chunk);
+        contents.add(chunk.content);
       }
 
-      expect(result, ['完整']);
+      expect(contents.where((c) => c != null), ['完整']);
     });
 
     test('思考模式新增 extraThinkingBody', () async {
@@ -223,6 +222,66 @@ void main() {
       final body = captured.first;
       expect(body['thinking'], {'type': 'enabled'});
       expect(body['reasoning_effort'], 'high');
+    });
+
+    test('思考模式解析 reasoning_content 字段', () async {
+      final response = _makeResponse(
+        'data: {"choices":[{"delta":{"reasoning_content":"正在思考..."}}]}\n'
+        'data: {"choices":[{"delta":{"reasoning_content":"继续推理"}}]}\n'
+        'data: {"choices":[{"delta":{"content":"最终结论"}}]}\n'
+        'data: [DONE]\n',
+      );
+      when(() => mockDio.post(
+            any(),
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+            cancelToken: any(named: 'cancelToken'),
+          )).thenAnswer((_) async => response);
+
+      final reasonings = <String?>[];
+      final contents = <String?>[];
+      await for (final chunk in service.generateStream(
+        baseUrl: testBaseUrl,
+        apiKey: testApiKey,
+        model: testModel,
+        prompt: testPrompt,
+        enableThinking: true,
+      )) {
+        reasonings.add(chunk.reasoningContent);
+        contents.add(chunk.content);
+      }
+
+      // 思考过程被正确提取
+      expect(reasonings.where((r) => r != null), ['正在思考...', '继续推理']);
+      // 正文 content 与 reasoning 分离
+      expect(contents.where((c) => c != null), ['最终结论']);
+    });
+
+    test('content 与 reasoning_content 同时存在的 chunk', () async {
+      final response = _makeResponse(
+        'data: {"choices":[{"delta":{"content":"正文","reasoning_content":"思考"}}]}\n'
+        'data: [DONE]\n',
+      );
+      when(() => mockDio.post(
+            any(),
+            options: any(named: 'options'),
+            data: any(named: 'data'),
+            cancelToken: any(named: 'cancelToken'),
+          )).thenAnswer((_) async => response);
+
+      final chunks = <AiStreamChunk>[];
+      await for (final chunk in service.generateStream(
+        baseUrl: testBaseUrl,
+        apiKey: testApiKey,
+        model: testModel,
+        prompt: testPrompt,
+      )) {
+        chunks.add(chunk);
+      }
+
+      expect(chunks.length, 1);
+      expect(chunks.first.content, '正文');
+      expect(chunks.first.reasoningContent, '思考');
     });
   });
 }

@@ -10,12 +10,20 @@ class AiReportResponse {
   const AiReportResponse({required this.content, this.reasoningContent});
 }
 
+/// 流式 chunk：content 为正文增量，reasoningContent 为思考过程增量。
+class AiStreamChunk {
+  final String? content;
+  final String? reasoningContent;
+
+  const AiStreamChunk({this.content, this.reasoningContent});
+}
+
 class AiReportService {
   final Dio _dio;
 
   AiReportService({Dio? dio}) : _dio = dio ?? Dio();
 
-  Stream<String> generateStream({
+  Stream<AiStreamChunk> generateStream({
     required String baseUrl,
     required String apiKey,
     required String model,
@@ -41,7 +49,7 @@ class AiReportService {
     );
   }
 
-  Stream<String> _streamResponse({
+  Stream<AiStreamChunk> _streamResponse({
     required String baseUrl,
     required String apiKey,
     required String model,
@@ -85,7 +93,10 @@ class AiReportService {
     void resetIdleTimer() {
       idleTimer?.cancel();
       idleTimer = Timer(idleTimeout, () {
-        cancelToken?.cancel();
+        // 超时取消时带上明确原因，便于上层区分"用户取消"与"超时取消"
+        cancelToken?.cancel(
+          TimeoutException('AI 响应空闲超时', idleTimeout),
+        );
       });
     }
 
@@ -118,14 +129,30 @@ class AiReportService {
         try {
           final chunk = jsonDecode(line.substring(6))
               as Map<String, dynamic>;
-          final content = chunk['choices']?[0]?['delta']?['content'] as String?;
-          if (content != null && content.isNotEmpty) {
-            yield content;
+          final delta = chunk['choices']?[0]?['delta']
+              as Map<String, dynamic>?;
+          if (delta != null) {
+            final content = delta['content'] as String?;
+            final reasoning = delta['reasoning_content'] as String?;
+            // 任意一个字段非空即 yield；空内容也允许透传以保留心跳节奏
+            if ((content != null && content.isNotEmpty) ||
+                (reasoning != null && reasoning.isNotEmpty)) {
+              yield AiStreamChunk(
+                content: content,
+                reasoningContent: reasoning,
+              );
+            }
           }
         } catch (_) {}
       }
     } on DioException catch (e) {
-      if (e.type == DioExceptionType.cancel) return;
+      if (e.type == DioExceptionType.cancel) {
+        // 区分用户主动取消与超时取消：超时取消向上抛出明确异常
+        if (e.error is TimeoutException) {
+          throw TimeoutException('AI 响应空闲超时，已生成内容可能不完整');
+        }
+        return;
+      }
       rethrow;
     } finally {
       idleTimer?.cancel();
