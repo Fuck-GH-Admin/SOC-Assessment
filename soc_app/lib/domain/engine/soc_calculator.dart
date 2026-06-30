@@ -30,7 +30,7 @@ const Map<String, double> _fertilizerEffect = {'F': 1.0, 'UNF': 0.92};
 List<String> validateInput(CalculationParams params) {
   final errors = <String>[];
   if (params.bd < 0.5 || params.bd > 2.5) {
-    errors.add('土壤容重应在0.5-2.5 g/cm³范围内');
+    errors.add('土壤容重应在0.5-2.5 g/cm^3范围内');
   }
   if (params.ph < 3 || params.ph > 11) {
     errors.add('pH值应在3-11范围内');
@@ -53,7 +53,7 @@ List<String> validateInput(CalculationParams params) {
   for (var i = 0; i < params.soilLayers.length; i++) {
     final layer = params.soilLayers[i];
     if (layer.bd < 0.8 || layer.bd > 1.8) {
-      errors.add('第${i + 1}层土壤容重应在0.8-1.8 g/cm³范围内');
+      errors.add('第${i + 1}层土壤容重应在0.8-1.8 g/cm^3范围内');
     }
     if (layer.socValue < 0 || layer.socValue > 100) {
       errors.add('第${i + 1}层SOC含量应在0-100 g/kg范围内');

@@ -54,7 +54,7 @@ class _ComparePageState extends ConsumerState<ComparePage> {
   static const _paramLabels = {
     'fert': '施肥',
     'erosion': '侵蚀(cm)',
-    'bd': '容重(g/cm³)',
+    'bd': '容重(g/cm^3)',
     'ph': 'pH',
     'wc': '含水(%)',
     'clay': '黏粉粒(%)',
@@ -63,9 +63,9 @@ class _ComparePageState extends ConsumerState<ComparePage> {
 
   static const _resultLabels = {
     'soc': 'SOC(g/kg)',
-    'carbonStorage': '碳储量(kg/m²)',
-    'carbonDensity': '碳密度(kg/m³)',
-    'recoveryRate': '恢复速率(kg/m²/yr)',
+    'carbonStorage': '碳储量(kg/m^2)',
+    'carbonDensity': '碳密度(kg/m^3)',
+    'recoveryRate': '恢复速率(kg/m^2/yr)',
     'lossRate': '损失率(%)',
   };
 
@@ -238,11 +238,11 @@ class _ComparePageState extends ConsumerState<ComparePage> {
 
   Widget _buildResilienceTable(List<Map<String, dynamic>> records) {
     final resilienceLabels = {
-      'carbonPool_0_20': '碳库0-20(kg/m²)',
-      'carbonPool_0_60': '剖面碳库(kg/m²)',
-      'netChange_20yr': '20年净变(kg/m²)',
-      'netChange_100yr': '100年净变(kg/m²)',
-      'recoveryRate_annual': '年恢复(kg/m²/yr)',
+      'carbonPool_0_20': '碳库0-20(kg/m^2)',
+      'carbonPool_0_60': '剖面碳库(kg/m^2)',
+      'netChange_20yr': '20年净变(kg/m^2)',
+      'netChange_100yr': '100年净变(kg/m^2)',
+      'recoveryRate_annual': '年恢复(kg/m^2/yr)',
       'status': '状态',
     };
 

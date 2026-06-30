@@ -5,7 +5,7 @@ import 'package:soc_app/core/theme/theme_provider.dart';
 import 'package:soc_app/data/ai_config_service.dart';
 import 'package:soc_app/presentation/providers/ai_config_provider.dart';
 
-final _kVersion = '1.1.2';
+final _kVersion = '1.1.3v2';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});

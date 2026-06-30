@@ -74,11 +74,17 @@ class RecordDao {
       query.where((t) => t.label.contains(search));
     }
 
+    // 分页下推到 SQL，避免全表加载到内存再切片
+    if (limit != null) {
+      query
+        ..limit(limit, offset: offset);
+    } else if (offset > 0) {
+      query
+        ..limit(-1, offset: offset);
+    }
+
     final rows = await query.get();
-    final start = offset < rows.length ? offset : rows.length;
-    final end = limit != null ? (start + limit) : rows.length;
-    final sliced = rows.sublist(start, end > rows.length ? rows.length : end);
-    return _decodeAll(sliced);
+    return _decodeAll(rows);
   }
 
   Future<Map<String, dynamic>?> getLatest() async {

@@ -251,7 +251,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       SizedBox(
                         width: wide ? 220 : double.infinity,
                         child: _buildTextField(
-                          label: '土壤容重 (g/cm³)',
+                          label: '土壤容重 (g/cm^3)',
                           hint: '0.5-2.5',
                           controller: _ctrls['bd']!,
                           onChanged: (v) => ref
@@ -411,29 +411,29 @@ class _HomePageState extends ConsumerState<HomePage> {
                 _buildResultRow(
                   '碳储量',
                   state.isCalculated
-                      ? '${state.result!.carbonStorage} kg C/m²'
+                      ? '${state.result!.carbonStorage} kg C/m^2'
                       : '--',
                 ),
                 _buildResultRow(
                   '碳密度',
                   state.isCalculated
-                      ? '${state.result!.carbonDensity} kg C/m³'
+                      ? '${state.result!.carbonDensity} kg C/m^3'
                       : '--',
                 ),
                 _buildResultRow(
                   '净变化量',
                   state.isCalculated
                       ? (state.resilience != null
-                          ? '${state.resilience!.netChange20yr} kg C/m²'
-                          : '${state.result!.netChange} kg C/m²*')
+                          ? '${state.resilience!.netChange20yr} kg C/m^2'
+                          : '${state.result!.netChange} g/kg*')
                       : '--',
                 ),
                 _buildResultRow(
                   '恢复速率',
                   state.isCalculated
                       ? (state.resilience != null
-                          ? '${state.resilience!.recoveryRateAnnual} kg C/m²/yr'
-                          : '${state.result!.recoveryRate} kg C/m²/yr*')
+                          ? '${state.resilience!.recoveryRateAnnual} kg C/m^2/yr'
+                          : '${state.result!.recoveryRate} g/kg/yr*')
                       : '--',
                 ),
                 _buildResultRow(
