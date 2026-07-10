@@ -22,12 +22,12 @@ class ComparisonRadarChart extends StatelessWidget {
   });
 
   List<double> _buildData(CalculationResult r) => [
-        _normalize(r.soc, 0, 25),
-        _normalize(r.carbonStorage, 0, 10),
-        _normalize(r.carbonDensity, 0, 50),
-        _normalize(r.recoveryRate, 0, 1),
-        _normalize(r.netChange, -5, 5),
-      ];
+    _normalize(r.soc, 0, 25),
+    _normalize(r.carbonStorage, 0, 10),
+    _normalize(r.carbonDensity, 0, 50),
+    _normalize(r.lossRate, 0, 100),
+    _normalize(r.netChange, -5, 5),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -37,8 +37,16 @@ class ComparisonRadarChart extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('土壤碳库多维度对比',
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        Text(
+          '土壤碳库指标相对尺度对比',
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const Text(
+          '归一化仅用于图形比较；部分指标由同一SOC数据推导，不代表综合评分。不同算法版本不应直接比较。',
+          style: TextStyle(fontSize: 10),
+        ),
         const SizedBox(height: 8),
         SizedBox(
           height: 300,
@@ -51,35 +59,27 @@ class ComparisonRadarChart extends StatelessWidget {
                   borderColor: const Color(0xFF4A9EFF),
                   borderWidth: 2,
                   entryRadius: 0,
-                  dataEntries:
-                      data1.map((v) => RadarEntry(value: v)).toList(),
+                  dataEntries: data1.map((v) => RadarEntry(value: v)).toList(),
                 ),
                 RadarDataSet(
                   fillColor: const Color(0xFFFF6B6B).withValues(alpha: 0.15),
                   borderColor: const Color(0xFFFF6B6B),
                   borderWidth: 2,
                   entryRadius: 0,
-                  dataEntries:
-                      data2.map((v) => RadarEntry(value: v)).toList(),
+                  dataEntries: data2.map((v) => RadarEntry(value: v)).toList(),
                 ),
               ],
               tickCount: 5,
-              titleTextStyle:
-                  TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurface),
+              titleTextStyle: TextStyle(
+                fontSize: 11,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
               titlePositionPercentageOffset: 0.25,
               getTitle: (idx, _) {
-                const labels = [
-                  'SOC含量',
-                  '碳库储量',
-                  '碳密度',
-                  '年恢复速率',
-                  '碳库净变化'
-                ];
+                const labels = ['SOC含量', '碳库储量', '碳密度', '相对CK损失', '相对CK差'];
                 return RadarChartTitle(text: labels[idx]);
               },
-              radarTouchData: RadarTouchData(
-                enabled: true,
-              ),
+              radarTouchData: RadarTouchData(enabled: true),
             ),
           ),
         ),

@@ -24,7 +24,7 @@ class HeatmapChart extends StatelessWidget {
     final cells = <_HeatmapCell>[];
     for (final e in erosionLevels) {
       for (var di = 0; di < depthKeys.length; di++) {
-        final v = lookupBaseSOC(fert, e, depthKeys[di]) ?? 0.0;
+        final v = calculateSOCValue(fert, e, depthKeys[di]);
         cells.add(_HeatmapCell(e, di, v));
       }
     }
@@ -34,11 +34,17 @@ class HeatmapChart extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('侵蚀强度 × 土层深度 SOC分布热力图',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const Text(
+          '侵蚀强度 × 土层深度 SOC分布热力图',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        const Text(
+          '单元格：SOC (g/kg)；列：侵蚀深度 (cm)；行：土层范围',
+          style: TextStyle(fontSize: 10),
+        ),
         const SizedBox(height: 8),
         SizedBox(
-          height: 200,
+          height: 210,
           child: CustomPaint(
             painter: _HeatmapPainter(
               cells: cells,
@@ -46,8 +52,9 @@ class HeatmapChart extends StatelessWidget {
               maxValue: maxV,
               erosionLevels: erosionLevels,
               depthLabels: depthLabels,
+              labelColor: Theme.of(context).colorScheme.onSurface,
             ),
-            size: const Size(double.infinity, 200),
+            size: const Size(double.infinity, 210),
           ),
         ),
       ],
@@ -69,6 +76,7 @@ class _HeatmapPainter extends CustomPainter {
   final double maxValue;
   final List<int> erosionLevels;
   final List<String> depthLabels;
+  final Color labelColor;
 
   _HeatmapPainter({
     required this.cells,
@@ -76,19 +84,49 @@ class _HeatmapPainter extends CustomPainter {
     required this.maxValue,
     required this.erosionLevels,
     required this.depthLabels,
+    required this.labelColor,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final cellW = size.width / erosionLevels.length;
-    final cellH = size.height / depthLabels.length;
-    final labelPaint = TextPainter(
-      textDirection: TextDirection.ltr,
-    );
+    const leftMargin = 62.0;
+    const topMargin = 22.0;
+    final gridWidth = size.width - leftMargin;
+    final gridHeight = size.height - topMargin;
+    final cellW = gridWidth / erosionLevels.length;
+    final cellH = gridHeight / depthLabels.length;
+    final labelPaint = TextPainter(textDirection: TextDirection.ltr);
+
+    for (var i = 0; i < erosionLevels.length; i++) {
+      labelPaint.text = TextSpan(
+        text: '${erosionLevels[i]}',
+        style: TextStyle(color: labelColor, fontSize: 9),
+      );
+      labelPaint.layout();
+      labelPaint.paint(
+        canvas,
+        Offset(leftMargin + i * cellW + (cellW - labelPaint.width) / 2, 2),
+      );
+    }
+
+    for (var i = 0; i < depthLabels.length; i++) {
+      labelPaint.text = TextSpan(
+        text: depthLabels[i],
+        style: TextStyle(color: labelColor, fontSize: 8),
+      );
+      labelPaint.layout(maxWidth: leftMargin - 4);
+      labelPaint.paint(
+        canvas,
+        Offset(
+          leftMargin - labelPaint.width - 4,
+          topMargin + i * cellH + (cellH - labelPaint.height) / 2,
+        ),
+      );
+    }
 
     for (final cell in cells) {
-      final x = erosionLevels.indexOf(cell.erosion) * cellW;
-      final y = cell.depthIdx * cellH;
+      final x = leftMargin + erosionLevels.indexOf(cell.erosion) * cellW;
+      final y = topMargin + cell.depthIdx * cellH;
       final color = _heatmapColor(cell.value, minValue, maxValue);
 
       final rect = Rect.fromLTWH(x, y, cellW, cellH);
@@ -122,5 +160,10 @@ class _HeatmapPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _HeatmapPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _HeatmapPainter oldDelegate) {
+    return oldDelegate.minValue != minValue ||
+        oldDelegate.maxValue != maxValue ||
+        oldDelegate.labelColor != labelColor ||
+        oldDelegate.cells != cells;
+  }
 }

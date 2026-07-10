@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import '../domain/models/calculation_params.dart';
 import '../domain/models/calculation_result.dart';
 import '../domain/models/resilience_result.dart';
+import '../domain/engine/soc_calculator.dart';
 import 'app_database.dart';
 
 class RecordDao {
@@ -12,38 +13,58 @@ class RecordDao {
 
   RecordDao(this._db);
 
+  Future<T> transaction<T>(Future<T> Function() action) {
+    return _db.transaction(action);
+  }
+
   Future<int> insert({
     required CalculationParams params,
     required CalculationResult result,
     ResilienceResult? resilience,
     String? label,
-  }) =>
-      _db.into(_db.historyRecords).insert(HistoryRecordsCompanion.insert(
-        params: jsonEncode(params.toJson()),
-        result: jsonEncode(result.toJson()),
-        resilience: resilience != null
-            ? Value(jsonEncode(resilience.toJson()))
-            : const Value.absent(),
-        label: label != null ? Value(label) : const Value.absent(),
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+    String? pdfPath,
+    int? algorithmVersion,
+    int? createdAt,
+  }) => _db
+      .into(_db.historyRecords)
+      .insert(
+        HistoryRecordsCompanion.insert(
+          params: jsonEncode(params.toJson()),
+          result: jsonEncode(result.toJson()),
+          resilience: resilience != null
+              ? Value(jsonEncode(resilience.toJson()))
+              : const Value.absent(),
+          label: label != null ? Value(label) : const Value.absent(),
+          pdfPath: pdfPath != null ? Value(pdfPath) : const Value.absent(),
+          algorithmVersion: Value(algorithmVersion ?? kSocAlgorithmVersion),
+          createdAt: createdAt ?? DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+
+  Future<void> updatePdfPath(int id, String? pdfPath) async {
+    await (_db.update(_db.historyRecords)..where((t) => t.id.equals(id))).write(
+      HistoryRecordsCompanion(pdfPath: Value(pdfPath)),
+    );
+  }
+
+  Future<void> updateLabel(int id, String? label) async {
+    await (_db.update(_db.historyRecords)..where((t) => t.id.equals(id))).write(
+      HistoryRecordsCompanion(label: Value(label)),
+    );
+  }
 
   Future<void> delete(int id) async {
-    await (_db.delete(_db.historyRecords)
-          ..where((t) => t.id.equals(id)))
-        .go();
+    await (_db.delete(_db.historyRecords)..where((t) => t.id.equals(id))).go();
   }
 
   Future<void> deleteByIds(List<int> ids) async {
-    await (_db.delete(_db.historyRecords)
-          ..where((t) => t.id.isIn(ids)))
-        .go();
+    await (_db.delete(_db.historyRecords)..where((t) => t.id.isIn(ids))).go();
   }
 
   Future<Map<String, dynamic>?> getById(int id) async {
-    final row = await (_db.select(_db.historyRecords)
-          ..where((t) => t.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (_db.select(
+      _db.historyRecords,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
     if (row == null) return null;
     try {
       return _decode(row);
@@ -53,11 +74,16 @@ class RecordDao {
   }
 
   Future<List<Map<String, dynamic>>> getByIds(List<int> ids) async {
-    final rows = await (_db.select(_db.historyRecords)
-          ..where((t) => t.id.isIn(ids))
-          ..orderBy(
-              [(t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc)]))
-        .get();
+    final rows =
+        await (_db.select(_db.historyRecords)
+              ..where((t) => t.id.isIn(ids))
+              ..orderBy([
+                (t) => OrderingTerm(
+                  expression: t.createdAt,
+                  mode: OrderingMode.desc,
+                ),
+              ]))
+            .get();
     return _decodeAll(rows);
   }
 
@@ -67,8 +93,9 @@ class RecordDao {
     int? limit,
   }) async {
     var query = _db.select(_db.historyRecords)
-      ..orderBy(
-          [(t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc)]);
+      ..orderBy([
+        (t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
+      ]);
 
     if (search != null && search.isNotEmpty) {
       query.where((t) => t.label.contains(search));
@@ -76,11 +103,9 @@ class RecordDao {
 
     // 分页下推到 SQL，避免全表加载到内存再切片
     if (limit != null) {
-      query
-        ..limit(limit, offset: offset);
+      query.limit(limit, offset: offset);
     } else if (offset > 0) {
-      query
-        ..limit(-1, offset: offset);
+      query.limit(-1, offset: offset);
     }
 
     final rows = await query.get();
@@ -88,11 +113,16 @@ class RecordDao {
   }
 
   Future<Map<String, dynamic>?> getLatest() async {
-    final rows = await (_db.select(_db.historyRecords)
-          ..orderBy(
-              [(t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc)])
-          ..limit(1))
-        .get();
+    final rows =
+        await (_db.select(_db.historyRecords)
+              ..orderBy([
+                (t) => OrderingTerm(
+                  expression: t.createdAt,
+                  mode: OrderingMode.desc,
+                ),
+              ])
+              ..limit(1))
+            .get();
     if (rows.isEmpty) return null;
     try {
       return _decode(rows.first);
@@ -120,14 +150,19 @@ class RecordDao {
   Map<String, dynamic> _decode(HistoryRecord row) => {
     'id': row.id,
     'params': CalculationParams.fromJson(
-        jsonDecode(row.params) as Map<String, dynamic>),
+      jsonDecode(row.params) as Map<String, dynamic>,
+    ),
     'result': CalculationResult.fromJson(
-        jsonDecode(row.result) as Map<String, dynamic>),
+      jsonDecode(row.result) as Map<String, dynamic>,
+    ),
     'resilience': row.resilience != null
         ? ResilienceResult.fromJson(
-            jsonDecode(row.resilience!) as Map<String, dynamic>)
+            jsonDecode(row.resilience!) as Map<String, dynamic>,
+          )
         : null,
     'label': row.label,
+    'pdfPath': row.pdfPath,
+    'algorithmVersion': row.algorithmVersion,
     'createdAt': DateTime.fromMillisecondsSinceEpoch(row.createdAt),
   };
 }

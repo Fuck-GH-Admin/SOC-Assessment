@@ -5,7 +5,7 @@ import 'package:soc_app/core/theme/theme_provider.dart';
 import 'package:soc_app/data/ai_config_service.dart';
 import 'package:soc_app/presentation/providers/ai_config_provider.dart';
 
-final _kVersion = '1.1.3v2';
+final _kVersion = '1.1.4 (build 3)';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -20,6 +20,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _modelCtrl = TextEditingController();
   bool _obscureKey = true;
   bool _loading = true;
+  bool _saving = false;
+  bool _clearing = false;
 
   String _presetId = 'deepseek';
   bool _enableThinking = false;
@@ -32,23 +34,29 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   Future<void> _loadConfig() async {
-    final service = ref.read(aiConfigProvider);
-    final presetId = await service.readPresetId();
-    final baseUrl = await service.readBaseUrl();
-    final model = await service.readModel();
-    final key = await service.readApiKey();
-    final enableThinking = await service.readEnableThinking();
-    final reasoningEffort = await service.readReasoningEffort();
-    if (!mounted) return;
-    setState(() {
-      _presetId = presetId;
-      _urlCtrl.text = baseUrl;
-      _modelCtrl.text = model;
-      _keyCtrl.text = key ?? '';
-      _enableThinking = enableThinking;
-      _reasoningEffort = reasoningEffort;
-      _loading = false;
-    });
+    try {
+      final service = ref.read(aiConfigProvider);
+      final presetId = await service.readPresetId();
+      final baseUrl = await service.readBaseUrl();
+      final model = await service.readModel();
+      final key = await service.readApiKey();
+      final enableThinking = await service.readEnableThinking();
+      final reasoningEffort = await service.readReasoningEffort();
+      if (!mounted) return;
+      setState(() {
+        _presetId = presetId;
+        _urlCtrl.text = baseUrl;
+        _modelCtrl.text = model;
+        _keyCtrl.text = key ?? '';
+        _enableThinking = enableThinking;
+        _reasoningEffort = reasoningEffort;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _showMessage('配置读取失败：$e');
+    }
   }
 
   @override
@@ -60,9 +68,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   void _onPresetChanged(String presetId) {
-    final preset =
-        kAiProviderPresets.firstWhere((p) => p.id == presetId,
-            orElse: () => kAiProviderPresets.last);
+    final preset = kAiProviderPresets.firstWhere(
+      (p) => p.id == presetId,
+      orElse: () => kAiProviderPresets.first,
+    );
     setState(() {
       _presetId = presetId;
       _urlCtrl.text = preset.baseUrl;
@@ -74,45 +83,87 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   }
 
   Future<void> _save() async {
-    final service = ref.read(aiConfigProvider);
-    await service.writeApiKey(_keyCtrl.text);
-    await service.writePresetId(_presetId);
-    await service.writeBaseUrl(_urlCtrl.text);
-    await service.writeModel(_modelCtrl.text);
-    await service.writeEnableThinking(_enableThinking);
-    await service.writeReasoningEffort(_reasoningEffort);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('配置已保存')),
-      );
-      Navigator.pop(context, true);
+    final baseUrl = _urlCtrl.text.trim();
+    final apiKey = _keyCtrl.text.trim();
+    final model = _modelCtrl.text.trim();
+    final uri = Uri.tryParse(baseUrl);
+    if (uri == null ||
+        !uri.hasScheme ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      _showMessage('请输入有效的 HTTP/HTTPS API 地址');
+      return;
+    }
+    final selectedPreset = kAiProviderPresets.firstWhere(
+      (p) => p.id == _presetId,
+      orElse: () => kAiProviderPresets.first,
+    );
+    if (apiKey.isEmpty && selectedPreset.apiKeyRequired) {
+      _showMessage('API Key 不能为空');
+      return;
+    }
+    if (model.isEmpty) {
+      _showMessage('模型名称不能为空');
+      return;
+    }
+
+    setState(() => _saving = true);
+    try {
+      final service = ref.read(aiConfigProvider);
+      await service.writePresetId(_presetId);
+      await service.writeBaseUrl(baseUrl);
+      await service.writeModel(model);
+      await service.writeApiKey(apiKey);
+      await service.writeEnableThinking(_enableThinking);
+      await service.writeReasoningEffort(_reasoningEffort);
+      if (mounted) {
+        _showMessage('配置已保存');
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      _showMessage('配置保存失败：$e');
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
   Future<void> _clear() async {
-    final service = ref.read(aiConfigProvider);
-    await service.clearAll();
-    if (mounted) {
-      final preset = kAiProviderPresets.first;
-      setState(() {
-        _presetId = preset.id;
-        _urlCtrl.text = preset.baseUrl;
-        _modelCtrl.text = preset.defaultModel;
-        _keyCtrl.text = '';
-        _enableThinking = false;
-        _reasoningEffort = 'high';
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('配置已清除')),
-      );
+    setState(() => _clearing = true);
+    try {
+      final service = ref.read(aiConfigProvider);
+      await service.clearAll();
+      if (mounted) {
+        final preset = kAiProviderPresets.first;
+        setState(() {
+          _presetId = preset.id;
+          _urlCtrl.text = preset.baseUrl;
+          _modelCtrl.text = preset.defaultModel;
+          _keyCtrl.text = '';
+          _enableThinking = false;
+          _reasoningEffort = 'high';
+        });
+        _showMessage('配置已清除');
+      }
+    } catch (e) {
+      _showMessage('配置清除失败：$e');
+    } finally {
+      if (mounted) setState(() => _clearing = false);
     }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentPreset =
-        kAiProviderPresets.firstWhere((p) => p.id == _presetId,
-            orElse: () => kAiProviderPresets.last);
+    final currentPreset = kAiProviderPresets.firstWhere(
+      (p) => p.id == _presetId,
+      orElse: () => kAiProviderPresets.first,
+    );
     final currentThemeMode = ref.watch(themeModeProvider);
     final currentSeedColor = ref.watch(seedColorProvider);
 
@@ -129,21 +180,25 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('AI 服务配置',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge),
+                        Text(
+                          'AI 服务配置',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
                         const SizedBox(height: 16),
                         DropdownMenu<String>(
+                          key: ValueKey(_presetId),
                           initialSelection: _presetId,
                           label: const Text('服务提供商'),
                           inputDecorationTheme: const InputDecorationTheme(
                             border: OutlineInputBorder(),
                           ),
                           dropdownMenuEntries: kAiProviderPresets
-                              .map((p) => DropdownMenuEntry(
+                              .map(
+                                (p) => DropdownMenuEntry(
                                   value: p.id,
-                                  label: p.displayName))
+                                  label: p.displayName,
+                                ),
+                              )
                               .toList(),
                           onSelected: (v) {
                             if (v != null) _onPresetChanged(v);
@@ -153,9 +208,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         TextField(
                           controller: _urlCtrl,
                           decoration: const InputDecoration(
-                            labelText: 'API 地址',
-                            hintText:
-                                'https://api.deepseek.com',
+                            labelText: 'API 基础地址或完整接口地址',
+                            hintText: 'https://api.deepseek.com',
+                            helperText:
+                                '可填写基础地址，也可直接填写以 /chat/completions 结尾的地址',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -164,14 +220,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           controller: _keyCtrl,
                           obscureText: _obscureKey,
                           decoration: InputDecoration(
-                            labelText: 'API Key',
+                            labelText: currentPreset.apiKeyRequired
+                                ? 'API Key'
+                                : 'API Key（可选）',
                             border: const OutlineInputBorder(),
                             suffixIcon: IconButton(
-                              icon: Icon(_obscureKey
-                                  ? Icons.visibility_off
-                                  : Icons.visibility),
-                              onPressed: () => setState(
-                                  () => _obscureKey = !_obscureKey),
+                              icon: Icon(
+                                _obscureKey
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                              onPressed: () =>
+                                  setState(() => _obscureKey = !_obscureKey),
                             ),
                           ),
                         ),
@@ -180,33 +240,32 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           controller: _modelCtrl,
                           decoration: const InputDecoration(
                             labelText: '模型',
-                            hintText: 'deepseek-v4-pro',
+                            hintText: '填写服务商支持的模型 ID',
                             border: OutlineInputBorder(),
                           ),
                         ),
                         if (currentPreset.supportsThinking) ...[
                           const SizedBox(height: 16),
                           const Divider(),
-                          Text('思考模式',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleMedium),
+                          Text(
+                            '思考模式',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
                           const SizedBox(height: 8),
                           SwitchListTile(
                             title: const Text('启用思考模式'),
                             subtitle: Text(
-                                _enableThinking
-                                    ? '模型在回答前进行深度推理'
-                                    : '关闭后使用快速模式',
-                                style: const TextStyle(
-                                    fontSize: 12)),
+                              _enableThinking ? '模型在回答前进行深度推理' : '关闭后使用快速模式',
+                              style: const TextStyle(fontSize: 12),
+                            ),
                             value: _enableThinking,
-                            onChanged: (v) => setState(
-                                () => _enableThinking = v),
+                            onChanged: (v) =>
+                                setState(() => _enableThinking = v),
                             contentPadding: EdgeInsets.zero,
                           ),
                           if (_enableThinking)
                             DropdownMenu<String>(
+                              key: ValueKey(_reasoningEffort),
                               initialSelection: _reasoningEffort,
                               label: const Text('推理强度'),
                               inputDecorationTheme: const InputDecorationTheme(
@@ -214,19 +273,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                               ),
                               dropdownMenuEntries: const [
                                 DropdownMenuEntry(
-                                    value: 'low',
-                                    label: '低 (快速)'),
+                                  value: 'low',
+                                  label: '低 (快速)',
+                                ),
+                                DropdownMenuEntry(value: 'medium', label: '中'),
                                 DropdownMenuEntry(
-                                    value: 'medium',
-                                    label: '中'),
-                                DropdownMenuEntry(
-                                    value: 'high',
-                                    label: '高 (深度)'),
+                                  value: 'high',
+                                  label: '高 (深度)',
+                                ),
                               ],
                               onSelected: (v) {
                                 if (v != null) {
-                                  setState(() =>
-                                      _reasoningEffort = v);
+                                  setState(() => _reasoningEffort = v);
                                 }
                               },
                             ),
@@ -240,7 +298,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _clear,
+                        onPressed: _saving || _clearing ? null : _clear,
                         icon: const Icon(Icons.delete_outline),
                         label: const Text('清除配置'),
                       ),
@@ -248,7 +306,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: FilledButton.icon(
-                        onPressed: _save,
+                        onPressed: _saving || _clearing ? null : _save,
                         icon: const Icon(Icons.save),
                         label: const Text('保存'),
                       ),
@@ -262,59 +320,58 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('主题', style: Theme.of(context)
-                            .textTheme
-                            .titleLarge),
+                        Text(
+                          '主题',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
                         const SizedBox(height: 16),
-                        Text('配色方案',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall),
+                        Text(
+                          '配色方案',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
                         const SizedBox(height: 8),
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: List.generate(
-                            kColorPresets.length,
-                            (i) {
-                              final preset = kColorPresets[i];
-                              final selected =
-                                  preset.color.toARGB32() ==
-                                      currentSeedColor.toARGB32();
-                              return GestureDetector(
-                                onTap: () => ref
-                                    .read(seedColorProvider.notifier)
-                                    .setColor(i),
-                                child: Container(
-                                  width: 48,
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: preset.color,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: selected
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                          : Colors.transparent,
-                                      width: 3,
-                                    ),
+                          children: List.generate(kColorPresets.length, (i) {
+                            final preset = kColorPresets[i];
+                            final selected =
+                                preset.color.toARGB32() ==
+                                currentSeedColor.toARGB32();
+                            return GestureDetector(
+                              onTap: () => ref
+                                  .read(seedColorProvider.notifier)
+                                  .setColor(i),
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  color: preset.color,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: selected
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Colors.transparent,
+                                    width: 3,
                                   ),
-                                  child: selected
-                                      ? const Icon(Icons.check,
-                                          color: Colors.white, size: 20)
-                                      : null,
                                 ),
-                              );
-                            },
-                          ),
+                                child: selected
+                                    ? const Icon(
+                                        Icons.check,
+                                        color: Colors.white,
+                                        size: 20,
+                                      )
+                                    : null,
+                              ),
+                            );
+                          }),
                         ),
                         const SizedBox(height: 16),
                         const Divider(),
-                        Text('外观模式',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall),
+                        Text(
+                          '外观模式',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
                         const SizedBox(height: 8),
                         SegmentedButton<ThemeMode>(
                           segments: const [
@@ -350,10 +407,10 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('关于',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge),
+                        Text(
+                          '关于',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
                         const SizedBox(height: 8),
                         ListTile(
                           contentPadding: EdgeInsets.zero,
@@ -366,10 +423,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                           leading: const Icon(Icons.bug_report_outlined),
                           title: const Text('反馈问题 / 查看源码'),
                           subtitle: const Text(
-                              'github.com/Fuck-GH-Admin/SOC-Assessment'),
+                            'github.com/Fuck-GH-Admin/SOC-Assessment',
+                          ),
                           onTap: () => launchUrl(
                             Uri.parse(
-                                'https://github.com/Fuck-GH-Admin/SOC-Assessment/issues'),
+                              'https://github.com/Fuck-GH-Admin/SOC-Assessment/issues',
+                            ),
                             mode: LaunchMode.externalApplication,
                           ),
                         ),

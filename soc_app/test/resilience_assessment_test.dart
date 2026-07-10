@@ -37,11 +37,13 @@ void main() {
 
     test('returns error if no initialLayers', () {
       final params = CalculationParams(
-        soilLayers: [SoilLayer(layerId: '0-20', bd: 1.3, socValue: 15, thickness: 20)],
+        soilLayers: [
+          SoilLayer(layerId: '0-20', bd: 1.3, socValue: 15, thickness: 20),
+        ],
       );
       final result = assessResilience(params);
       expect(result.success, isFalse);
-      expect(result.errors, contains('缺少初始年份土层数据'));
+      expect(result.errors, contains('缺少CK参考土层数据'));
     });
 
     test('assesses resilience with valid layers', () {
@@ -63,7 +65,7 @@ void main() {
       expect(result.result, isNotNull);
     });
 
-    test('determines recovery status correctly for positive change', () {
+    test('describes a positive profile difference as above CK', () {
       final params = CalculationParams(
         soilLayers: [
           SoilLayer(layerId: '0-20', bd: 1.3, socValue: 20, thickness: 20),
@@ -75,7 +77,52 @@ void main() {
         ],
       );
       final result = assessResilience(params);
-      expect(result.result!.status, contains('恢复'));
+      expect(result.result!.status, contains('高于同施肥CK参考'));
+    });
+
+    test('rejects malformed layer identifiers', () {
+      final params = CalculationParams(
+        soilLayers: const [
+          SoilLayer(layerId: 'surface', bd: 1.3, socValue: 15, thickness: 20),
+          SoilLayer(layerId: '20-60', bd: 1.4, socValue: 10, thickness: 40),
+        ],
+        initialLayers: const [
+          SoilLayer(layerId: '0-20', bd: 1.3, socValue: 12, thickness: 20),
+          SoilLayer(layerId: '20-60', bd: 1.4, socValue: 8, thickness: 40),
+        ],
+      );
+      final result = assessResilience(params);
+      expect(result.success, isFalse);
+      expect(result.errors, contains(contains('无法识别')));
+    });
+
+    test('rejects mismatched or incomplete current and CK profiles', () {
+      final params = CalculationParams(
+        soilLayers: const [
+          SoilLayer(layerId: '0-20', bd: 1.3, socValue: 15, thickness: 20),
+          SoilLayer(layerId: '20-50', bd: 1.4, socValue: 10, thickness: 30),
+        ],
+        initialLayers: const [
+          SoilLayer(layerId: '0-20', bd: 1.3, socValue: 12, thickness: 20),
+          SoilLayer(layerId: '20-60', bd: 1.4, socValue: 8, thickness: 40),
+        ],
+      );
+      final result = assessResilience(params);
+      expect(result.success, isFalse);
+      expect(result.errors, contains(contains('完整覆盖0-60cm')));
+      expect(result.errors, contains(contains('相同的土层划分')));
+    });
+  });
+
+  group('computeStrawScenarios', () {
+    test('keeps baseline litter separate from scenario straw input', () {
+      final scenarios = computeStrawScenarios(8500, 0.45, 0.15);
+      expect(scenarios, hasLength(3));
+      expect(scenarios[0].strawInput, closeTo(0.11475, 1e-9));
+      expect(scenarios[0].totalInput, closeTo(0.26475, 1e-9));
+      expect(scenarios[1].strawInput, closeTo(0.19125, 1e-9));
+      expect(scenarios[2].strawInput, closeTo(0.3825, 1e-9));
+      expect(scenarios[2].totalInput, closeTo(0.5325, 1e-9));
     });
   });
 }

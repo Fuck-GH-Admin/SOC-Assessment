@@ -22,7 +22,7 @@ class AssessmentRadarChart extends StatelessWidget {
       _normalize(result.soc, 0, 25),
       _normalize(result.carbonStorage, 0, 10),
       _normalize(result.carbonDensity, 0, 50),
-      _normalize(result.recoveryRate, 0, 1),
+      _normalize(result.lossRate, 0, 100),
       _normalize(result.netChange, -5, 5),
     ];
 
@@ -30,12 +30,16 @@ class AssessmentRadarChart extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '土壤碳库多维度综合评估',
+          '土壤碳库指标相对尺度',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.bold,
             color: onSurface,
           ),
+        ),
+        const Text(
+          '各指标按固定展示区间归一化；部分指标由同一SOC数据推导，仅用于同屏观察，不代表综合评分。',
+          style: TextStyle(fontSize: 10),
         ),
         const SizedBox(height: 8),
         SizedBox(
@@ -60,24 +64,14 @@ class AssessmentRadarChart extends StatelessWidget {
                   fillColor: dataColor.withValues(alpha: 0.2),
                   borderColor: dataColor,
                   entryRadius: 3,
-                  dataEntries:
-                      data.map((v) => RadarEntry(value: v)).toList(),
+                  dataEntries: data.map((v) => RadarEntry(value: v)).toList(),
                 ),
               ],
               tickCount: 5,
-              titleTextStyle: TextStyle(
-                fontSize: 11,
-                color: onSurface,
-              ),
+              titleTextStyle: TextStyle(fontSize: 11, color: onSurface),
               titlePositionPercentageOffset: 0.15,
               getTitle: (idx, _) {
-                const labels = [
-                  'SOC含量',
-                  '碳库储量',
-                  '碳密度',
-                  '年恢复速率',
-                  '碳库净变化'
-                ];
+                const labels = ['SOC含量', '碳库储量', '碳密度', '相对CK损失', '相对CK差'];
                 return RadarChartTitle(text: labels[idx]);
               },
             ),
