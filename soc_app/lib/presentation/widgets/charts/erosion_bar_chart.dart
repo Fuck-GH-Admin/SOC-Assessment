@@ -15,14 +15,20 @@ class ErosionBarChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final socValues = erosionLevels
-        .map((e) => lookupBaseSOC(fert, e, 10) ?? 0)
+        .map((e) => calculateSOCValue(fert, e, 10))
         .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('不同侵蚀强度下的SOC含量',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const Text(
+          '不同侵蚀深度下的0-20cm SOC含量',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        const Text(
+          '纵轴：SOC (g/kg)；横轴：侵蚀深度 (cm)',
+          style: TextStyle(fontSize: 10),
+        ),
         const SizedBox(height: 8),
         SizedBox(
           height: 220,
@@ -50,8 +56,10 @@ class ErosionBarChart extends StatelessWidget {
                   sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: 40,
-                    getTitlesWidget: (v, _) => Text('${v.toInt()}',
-                        style: const TextStyle(fontSize: 10)),
+                    getTitlesWidget: (v, _) => Text(
+                      '${v.toInt()}',
+                      style: const TextStyle(fontSize: 10),
+                    ),
                   ),
                 ),
                 bottomTitles: AxisTitles(
@@ -62,15 +70,19 @@ class ErosionBarChart extends StatelessWidget {
                       if (idx < 0 || idx >= erosionLevels.length) {
                         return const Text('');
                       }
-                      return Text('${erosionLevels[idx]}',
-                          style: const TextStyle(fontSize: 9));
+                      return Text(
+                        '${erosionLevels[idx]}',
+                        style: const TextStyle(fontSize: 9),
+                      );
                     },
                   ),
                 ),
                 topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
+                  sideTitles: SideTitles(showTitles: false),
+                ),
                 rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
+                  sideTitles: SideTitles(showTitles: false),
+                ),
               ),
               borderData: FlBorderData(show: false),
               gridData: const FlGridData(show: true),

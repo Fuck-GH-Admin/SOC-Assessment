@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/native.dart';
 import 'package:soc_app/data/app_database.dart';
 import 'package:soc_app/data/record_dao.dart';
+import 'package:soc_app/domain/engine/soc_calculator.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/domain/models/calculation_result.dart';
 import 'package:soc_app/domain/models/resilience_result.dart';
@@ -31,6 +32,7 @@ void main() {
       expect((record!['params'] as CalculationParams).bd, 1.3);
       expect((record['params'] as CalculationParams).ph, 6.5);
       expect((record['result'] as CalculationResult).soc, 12.5);
+      expect(record['algorithmVersion'], kSocAlgorithmVersion);
     });
 
     test('insert with resilience and label', () async {
@@ -46,6 +48,36 @@ void main() {
       final record = await dao.getById(id);
       expect((record!['resilience'] as ResilienceResult).status, 'stable');
       expect(record['label'] as String, 'Test Label');
+    });
+
+    test('updatePdfPath stores and clears the local report path', () async {
+      final id = await dao.insert(
+        params: CalculationParams(),
+        result: CalculationResult(),
+      );
+
+      await dao.updatePdfPath(id, r'C:\reports\soc-report.pdf');
+      var record = await dao.getById(id);
+      expect(record!['pdfPath'], r'C:\reports\soc-report.pdf');
+
+      await dao.updatePdfPath(id, null);
+      record = await dao.getById(id);
+      expect(record!['pdfPath'], isNull);
+    });
+
+    test('updateLabel stores and clears a user label', () async {
+      final id = await dao.insert(
+        params: CalculationParams(),
+        result: CalculationResult(),
+      );
+
+      await dao.updateLabel(id, '样地 A');
+      var record = await dao.getById(id);
+      expect(record!['label'], '样地 A');
+
+      await dao.updateLabel(id, null);
+      record = await dao.getById(id);
+      expect(record!['label'], isNull);
     });
 
     test('getAll returns all records ordered by createdAt desc', () async {
@@ -119,5 +151,23 @@ void main() {
       final records = await dao.getAll();
       expect(records.isEmpty, true);
     });
+
+    test(
+      'transaction rolls back a partial batch when a later write fails',
+      () async {
+        expect(
+          () => dao.transaction(() async {
+            await dao.insert(
+              params: CalculationParams(bd: 1.0),
+              result: CalculationResult(soc: 10),
+            );
+            throw StateError('stop');
+          }),
+          throwsStateError,
+        );
+
+        expect(await dao.getAll(), isEmpty);
+      },
+    );
   });
 }

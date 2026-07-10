@@ -61,8 +61,14 @@ class LayerPool {
 class ResilienceResult {
   final double carbonPool020;
   final double carbonPool060;
+
+  /// 历史字段名：当前0-60cm剖面相对CK的静态碳库差。
   final double netChange20yr;
+
+  /// 历史字段名：当前0-20cm表层相对CK的静态碳库差。
   final double netChange100yr;
+
+  /// [netChange20yr] 除以20的折算代理，不是逐年恢复模型输出。
   final double recoveryRateAnnual;
   final List<StrawScenario> strawScenarios;
   final List<LayerPool> layerPools;
@@ -98,12 +104,13 @@ class ResilienceResult {
         netChange100yr: (json['netChange_100yr'] as num?)?.toDouble() ?? 0.0,
         recoveryRateAnnual:
             (json['recoveryRate_annual'] as num?)?.toDouble() ?? 0.0,
-        strawScenarios: (json['strawScenarios'] as List<dynamic>?)
-                ?.map(
-                    (e) => StrawScenario.fromJson(e as Map<String, dynamic>))
+        strawScenarios:
+            (json['strawScenarios'] as List<dynamic>?)
+                ?.map((e) => StrawScenario.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             [],
-        layerPools: (json['layerPools'] as List<dynamic>?)
+        layerPools:
+            (json['layerPools'] as List<dynamic>?)
                 ?.map((e) => LayerPool.fromJson(e as Map<String, dynamic>))
                 .toList() ??
             [],

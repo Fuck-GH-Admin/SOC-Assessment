@@ -2,7 +2,7 @@
 
 > 仓库：`soc-assessment/`　·　应用包：`soc_app/`　·　版本：1.1.3　·　技术栈：Flutter 3.12+ / Dart 3.12+
 >
-> 本文档为代码级 Wiki，覆盖整体架构、模块职责、关键类与函数、依赖关系与运行方式。功能层面的产品说明见 [DOCUMENTATION.md](./DOCUMENTATION.md)，编译打包见 [BUILD.md](./BUILD.md)。
+> 本文档为 v1.1.3 代码级 Wiki。功能层面的旧产品说明见 [DOCUMENTATION.md](./DOCUMENTATION.md)，当前编译打包入口见 [BUILD.md](../../../BUILD.md)。
 
 ---
 

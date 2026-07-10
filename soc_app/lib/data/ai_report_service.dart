@@ -18,6 +18,16 @@ class AiStreamChunk {
   const AiStreamChunk({this.content, this.reasoningContent});
 }
 
+String resolveChatCompletionsEndpoint(String baseUrl) {
+  final uri = Uri.parse(baseUrl.trim());
+  var path = uri.path.replaceFirst(RegExp(r'/+$'), '');
+  if (!path.endsWith('/chat/completions')) {
+    path = '$path/chat/completions';
+  }
+  if (!path.startsWith('/')) path = '/$path';
+  return uri.replace(path: path).toString();
+}
+
 class AiReportService {
   final Dio _dio;
 
@@ -61,6 +71,7 @@ class AiReportService {
     CancelToken? cancelToken,
     Duration idleTimeout = const Duration(seconds: 60),
   }) async* {
+    final requestCancelToken = cancelToken ?? CancelToken();
     final messages = <Map<String, String>>[
       {'role': 'user', 'content': prompt},
     ];
@@ -85,34 +96,32 @@ class AiReportService {
       body['temperature'] = 0.7;
     }
 
-    final endpoint = baseUrl.endsWith('/')
-        ? '${baseUrl}chat/completions'
-        : '$baseUrl/chat/completions';
+    final endpoint = resolveChatCompletionsEndpoint(baseUrl);
 
     Timer? idleTimer;
     void resetIdleTimer() {
       idleTimer?.cancel();
       idleTimer = Timer(idleTimeout, () {
         // 超时取消时带上明确原因，便于上层区分"用户取消"与"超时取消"
-        cancelToken?.cancel(
-          TimeoutException('AI 响应空闲超时', idleTimeout),
-        );
+        requestCancelToken.cancel(TimeoutException('AI 响应空闲超时', idleTimeout));
       });
     }
 
     try {
+      final headers = <String, String>{'Content-Type': 'application/json'};
+      if (apiKey.trim().isNotEmpty) {
+        headers['Authorization'] = 'Bearer ${apiKey.trim()}';
+      }
+
       final response = await _dio.post(
         endpoint,
         options: Options(
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $apiKey',
-          },
+          headers: headers,
           responseType: ResponseType.stream,
           sendTimeout: const Duration(seconds: 30),
         ),
         data: body,
-        cancelToken: cancelToken,
+        cancelToken: requestCancelToken,
       );
 
       final stream = response.data.stream as Stream<List<int>>;
@@ -123,14 +132,13 @@ class AiReportService {
 
       await for (final line in lines) {
         resetIdleTimer();
-        if (cancelToken?.isCancelled == true) break;
-        if (!line.startsWith('data: ')) continue;
-        if (line == 'data: [DONE]') break;
+        if (requestCancelToken.isCancelled) break;
+        if (!line.startsWith('data:')) continue;
+        final payload = line.substring(5).trimLeft();
+        if (payload == '[DONE]') break;
         try {
-          final chunk = jsonDecode(line.substring(6))
-              as Map<String, dynamic>;
-          final delta = chunk['choices']?[0]?['delta']
-              as Map<String, dynamic>?;
+          final chunk = jsonDecode(payload) as Map<String, dynamic>;
+          final delta = chunk['choices']?[0]?['delta'] as Map<String, dynamic>?;
           if (delta != null) {
             final content = delta['content'] as String?;
             final reasoning = delta['reasoning_content'] as String?;

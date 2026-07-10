@@ -6,11 +6,7 @@ import 'presentation/pages/home/home_page.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(
-    const ProviderScope(
-      child: SocApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: SocApp()));
 }
 
 class SocApp extends ConsumerWidget {
