@@ -1,72 +1,83 @@
-# 碳盾 SOC-Shield — 土壤有机碳评估系统
+# 碳盾 SOC-Shield
 
-基于 Flutter 的跨平台（Android / Windows）土壤有机碳（SOC）评估工具，支持参数计算、多维度图表分析、AI 报告生成与 PDF 导出。
+Flutter 跨平台土壤有机碳（SOC）评估工具，当前支持 Windows 与 Android。
+
+- 当前应用版本：**1.1.4+3**
+- 当前算法版本：**v2**
+- 当前数据库版本：**v3**
+
+## 功能
+
+- 按“施肥处理 × 侵蚀深度 × 土层”查询原始 SOC 数据。
+- 按真实土层厚度换算当前土层及 0–60cm 剖面碳库。
+- 与同施肥、同土层、侵蚀 0cm 的 CK 做静态比较。
+- 生成 30%、50%、100% 秸秆还田碳输入情景。
+- 提供 8 个数据图表；已移除没有数据依据的伪时间序列图。
+- 流式生成 AI 中文评估报告，支持多家 OpenAI 兼容接口。
+- 生成 PDF，并为每条历史记录持久化一份应用本地副本。
+- 历史记录支持详情、重命名、参数载入、JSON 导入导出、PDF 管理和多记录对比。
+- 2 秒防抖保存草稿，未完成草稿最多保留 7 天。
+
+## 重要口径
+
+pH、含水量、黏粉粒和全氮当前只作为辅助观测信息，不进入 SOC 查表或碳库换算。
+
+原始资料没有逐年末期值或可复现的动态模型参数。因此应用中的 0–60cm/0–20cm 指标是**当前侵蚀处理相对 CK 的静态差异**，不是 20 年或 100 年预测。
+
+完整业务契约见：
+
+- [业务口径与数据契约](docs/project/logic-and-data-contract.md)
+- [PDF 本地持久化](docs/project/pdf-report-storage.md)
+- [项目结构](docs/project/structure.md)
+- [本轮逻辑一致性审计](docs/audit/2026-07-10-logic-consistency-audit.md)
 
 ## 快速开始
 
-```bash
+```powershell
 cd soc_app
 flutter pub get
-flutter run          # 启动桌面端（Windows）
-flutter run -d android   # 启动移动端（Android）
+flutter run -d windows
 ```
 
-> 完整编译打包指南见 [BUILD.md](./BUILD.md)
-> **重要**：Release APK 需手动添加 INTERNET 权限，详见 [BUILD.md](./BUILD.md#androidapk)
+Android：
 
-## 主要功能
-
-- **SOC 计算**：基于施肥处理、侵蚀强度、土壤容重等参数计算 SOC 含量、碳库储量、碳密度、恢复速率等指标
-- **8 种可视化图表**：侵蚀条形图、深度折线图、时间序列图、雷达评估图、饼图、散点图、填充对比图、热力图
-- **AI 报告**：流式生成专业中文评估报告，支持思考模式（DeepSeek）
-- **PDF 导出**：包含参数表、结果表、图表截图、AI 报告
-- **历史记录**：本地 SQLite 存储，支持导入/导出 JSON
-- **多记录对比**：选择 2+ 条记录进行参数/结果/雷达图对比
-- **草稿自动保存**：2 秒防抖自动保存，5 分钟过期清理
-
-## 技术栈
-
-| 层 | 技术 |
-|---|---|
-| 框架 | Flutter 3.12+ / Dart 3.12+ |
-| 状态管理 | Riverpod 2.6 |
-| 数据库 | Drift (SQLite) |
-| 图表 | fl_chart 0.70 + CustomPainter |
-| AI 请求 | Dio 5 (SSE 流式) |
-| PDF | pdf 3.11 (RepaintBoundary 截图) |
-| 安全存储 | flutter_secure_storage |
-| 分享 | share_plus |
-| 测试 | flutter_test + mocktail |
-
-## 项目结构
-
-```
-soc_app/lib/
-├── domain/engine/        # 计算引擎（纯函数）
-├── domain/models/        # 数据模型
-├── data/                 # 数据层（数据库、API、文件 I/O）
-├── presentation/
-│   ├── providers/        # Riverpod 状态
-│   ├── pages/            # 页面（首页、历史、设置、对比）
-│   └── widgets/          # 组件（8 图表、AI 报告卡片）
-test/                     # 53 个单元测试
+```powershell
+flutter devices
+flutter run -d <device-id>
 ```
 
-## 配置
+发布构建见 [BUILD.md](BUILD.md)。
 
-首次使用 AI 报告功能需在设置页面配置 API：
+## 验证
 
-1. 点击 AppBar 齿轮图标 → 设置
-2. 选择服务商（DeepSeek / OpenAI / Groq / OpenRouter / 自定义）
-3. 填入 API Key 和模型名称
-4. 支持开启思考模式（DeepSeek 专属）
-
-## 测试
-
-```bash
+```powershell
 cd soc_app
-flutter test           # 53 tests, all pass
-dart analyze lib/      # 0 error, 0 warning（仅 test/ 有 3 个 info/warning）
+flutter analyze
+flutter test
+```
+
+当前基线：
+
+- Flutter 3.44.2
+- Dart 3.12.2
+- 静态分析：通过
+- 自动化测试：96 项全部通过
+
+## 目录
+
+```text
+soc-assessment/
+├── soc_app/          # Flutter 应用
+├── docs/
+│   ├── audit/        # 当前审计与修复记录
+│   ├── project/      # 当前业务、结构和存储文档
+│   └── history/      # 旧版本报告与归档文档
+├── release/          # 本地发布产物（Git 忽略）
+├── temp/             # 本地临时文件（Git 忽略）
+├── AGENTS.md
+├── BUILD.md
+├── LICENSE
+└── README.md
 ```
 
 ## License

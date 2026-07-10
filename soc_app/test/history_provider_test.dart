@@ -6,7 +6,6 @@ import 'package:soc_app/data/record_dao.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/domain/models/calculation_result.dart';
 import 'package:soc_app/presentation/providers/database_provider.dart';
-import 'package:soc_app/presentation/providers/record_dao_provider.dart';
 import 'package:soc_app/presentation/providers/history_provider.dart';
 
 void main() {
@@ -34,11 +33,15 @@ void main() {
       );
 
       // Inject a corrupted record directly into the database
-      await db.into(db.historyRecords).insert(HistoryRecordsCompanion.insert(
-        params: '{invalid json',
-        result: '{also invalid}',
-        createdAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await db
+          .into(db.historyRecords)
+          .insert(
+            HistoryRecordsCompanion.insert(
+              params: '{invalid json',
+              result: '{also invalid}',
+              createdAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
 
       final records = await dao.getAll();
       // Should return the 2 valid records, skip the corrupted one
@@ -52,28 +55,25 @@ void main() {
       );
 
       // Inject corrupted record
-      final id2 = await db.into(db.historyRecords).insert(
-        HistoryRecordsCompanion.insert(
-          params: '{bad json',
-          result: '{bad}',
-          createdAt: DateTime.now().millisecondsSinceEpoch,
-        ),
-      );
+      final id2 = await db
+          .into(db.historyRecords)
+          .insert(
+            HistoryRecordsCompanion.insert(
+              params: '{bad json',
+              result: '{bad}',
+              createdAt: DateTime.now().millisecondsSinceEpoch,
+            ),
+          );
 
       final records = await dao.getByIds([id1, id2]);
       expect(records.length, 1);
-      expect(
-        (records.first['params'] as CalculationParams).bd,
-        1.0,
-      );
+      expect((records.first['params'] as CalculationParams).bd, 1.0);
     });
 
     test('provider container reads records through shared database', () async {
       // This tests the historyListProvider integration with a real DB
       final container = ProviderContainer(
-        overrides: [
-          databaseProvider.overrideWith((ref) => Future.value(db)),
-        ],
+        overrides: [databaseProvider.overrideWith((ref) => Future.value(db))],
       );
       addTearDown(() => container.dispose());
 

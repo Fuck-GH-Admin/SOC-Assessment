@@ -35,7 +35,10 @@ class AiReportCard extends ConsumerWidget {
                 const SizedBox(width: 8),
                 Text(
                   state.streamContent.isEmpty ? '正在生成报告...' : '生成中...',
-                  style: TextStyle(color: theme.colorScheme.primary, fontSize: 13),
+                  style: TextStyle(
+                    color: theme.colorScheme.primary,
+                    fontSize: 13,
+                  ),
                 ),
               ],
             ),
@@ -44,10 +47,7 @@ class AiReportCard extends ConsumerWidget {
         // 思考过程（可折叠）——仅当 reasoningContent 有内容时渲染
         if (state.reasoningContent != null &&
             state.reasoningContent!.isNotEmpty)
-          _ReasoningTile(
-            reasoning: state.reasoningContent!,
-            theme: theme,
-          ),
+          _ReasoningTile(reasoning: state.reasoningContent!, theme: theme),
 
         // 报告正文：流式期间也用 MarkdownBody 渲染，避免裸露 Markdown 符号
         if (state.streamContent.isNotEmpty)
@@ -69,12 +69,19 @@ class AiReportCard extends ConsumerWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.error_outline, size: 16, color: theme.colorScheme.error),
+                Icon(
+                  Icons.error_outline,
+                  size: 16,
+                  color: theme.colorScheme.error,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     state.error!,
-                    style: TextStyle(color: theme.colorScheme.error, fontSize: 13),
+                    style: TextStyle(
+                      color: theme.colorScheme.error,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               ],
@@ -103,11 +110,7 @@ class AiReportCard extends ConsumerWidget {
         color: theme.colorScheme.primary,
         height: 1.4,
       ),
-      h3: TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        height: 1.4,
-      ),
+      h3: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, height: 1.4),
       listBullet: TextStyle(fontSize: 14, color: theme.colorScheme.primary),
       code: TextStyle(
         backgroundColor: theme.colorScheme.surfaceContainerHighest,
@@ -130,9 +133,7 @@ class AiReportCard extends ConsumerWidget {
       tableBorder: TableBorder.all(color: theme.dividerColor, width: 0.5),
       tableColumnWidth: const FlexColumnWidth(),
       horizontalRuleDecoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(color: theme.dividerColor, width: 1),
-        ),
+        border: Border(top: BorderSide(color: theme.dividerColor, width: 1)),
       ),
       strong: const TextStyle(fontWeight: FontWeight.bold),
       em: const TextStyle(fontStyle: FontStyle.italic),
@@ -159,8 +160,9 @@ class _ReasoningTileState extends State<_ReasoningTile> {
     return Container(
       margin: const EdgeInsets.only(top: 4, bottom: 4),
       decoration: BoxDecoration(
-        color: widget.theme.colorScheme.surfaceContainerHighest
-            .withValues(alpha: 0.5),
+        color: widget.theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.5,
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(

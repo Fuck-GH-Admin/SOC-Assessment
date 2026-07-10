@@ -13,10 +13,9 @@ class HistoryRecords extends Table {
   TextColumn get result => text()();
   TextColumn get resilience => text().nullable()();
   TextColumn get label => text().nullable()();
+  TextColumn get pdfPath => text().nullable()();
+  IntColumn get algorithmVersion => integer().withDefault(const Constant(1))();
   IntColumn get createdAt => integer()();
-
-  @override
-  Set<Column> get primaryKey => {id};
 }
 
 class Drafts extends Table {
@@ -33,13 +32,18 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
     onUpgrade: (m, from, to) async {
-      // Add migration steps here when schemaVersion is bumped
+      if (from < 2) {
+        await m.addColumn(historyRecords, historyRecords.pdfPath);
+      }
+      if (from < 3) {
+        await m.addColumn(historyRecords, historyRecords.algorithmVersion);
+      }
     },
   );
 

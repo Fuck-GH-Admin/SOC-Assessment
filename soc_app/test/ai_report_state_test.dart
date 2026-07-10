@@ -9,6 +9,7 @@ void main() {
       expect(state.reasoningContent, isNull);
       expect(state.isGenerating, false);
       expect(state.error, isNull);
+      expect(state.sourceFingerprint, isNull);
     });
 
     test('copyWith updates fields', () {
@@ -17,11 +18,13 @@ void main() {
         streamContent: 'hello',
         reasoningContent: 'thinking...',
         isGenerating: true,
+        sourceFingerprint: 'fp',
       );
       expect(modified.streamContent, 'hello');
       expect(modified.reasoningContent, 'thinking...');
       expect(modified.isGenerating, true);
       expect(modified.error, isNull);
+      expect(modified.sourceFingerprint, 'fp');
     });
 
     test('copyWith clears error when null', () {

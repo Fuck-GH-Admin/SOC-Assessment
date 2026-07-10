@@ -60,6 +60,29 @@ class $HistoryRecordsTable extends HistoryRecords
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _pdfPathMeta = const VerificationMeta(
+    'pdfPath',
+  );
+  @override
+  late final GeneratedColumn<String> pdfPath = GeneratedColumn<String>(
+    'pdf_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _algorithmVersionMeta = const VerificationMeta(
+    'algorithmVersion',
+  );
+  @override
+  late final GeneratedColumn<int> algorithmVersion = GeneratedColumn<int>(
+    'algorithm_version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -78,6 +101,8 @@ class $HistoryRecordsTable extends HistoryRecords
     result,
     resilience,
     label,
+    pdfPath,
+    algorithmVersion,
     createdAt,
   ];
   @override
@@ -123,6 +148,21 @@ class $HistoryRecordsTable extends HistoryRecords
         label.isAcceptableOrUnknown(data['label']!, _labelMeta),
       );
     }
+    if (data.containsKey('pdf_path')) {
+      context.handle(
+        _pdfPathMeta,
+        pdfPath.isAcceptableOrUnknown(data['pdf_path']!, _pdfPathMeta),
+      );
+    }
+    if (data.containsKey('algorithm_version')) {
+      context.handle(
+        _algorithmVersionMeta,
+        algorithmVersion.isAcceptableOrUnknown(
+          data['algorithm_version']!,
+          _algorithmVersionMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -160,6 +200,14 @@ class $HistoryRecordsTable extends HistoryRecords
         DriftSqlType.string,
         data['${effectivePrefix}label'],
       ),
+      pdfPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}pdf_path'],
+      ),
+      algorithmVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}algorithm_version'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -179,6 +227,8 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
   final String result;
   final String? resilience;
   final String? label;
+  final String? pdfPath;
+  final int algorithmVersion;
   final int createdAt;
   const HistoryRecord({
     required this.id,
@@ -186,6 +236,8 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
     required this.result,
     this.resilience,
     this.label,
+    this.pdfPath,
+    required this.algorithmVersion,
     required this.createdAt,
   });
   @override
@@ -200,6 +252,10 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
     if (!nullToAbsent || label != null) {
       map['label'] = Variable<String>(label);
     }
+    if (!nullToAbsent || pdfPath != null) {
+      map['pdf_path'] = Variable<String>(pdfPath);
+    }
+    map['algorithm_version'] = Variable<int>(algorithmVersion);
     map['created_at'] = Variable<int>(createdAt);
     return map;
   }
@@ -215,6 +271,10 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
       label: label == null && nullToAbsent
           ? const Value.absent()
           : Value(label),
+      pdfPath: pdfPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pdfPath),
+      algorithmVersion: Value(algorithmVersion),
       createdAt: Value(createdAt),
     );
   }
@@ -230,6 +290,8 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
       result: serializer.fromJson<String>(json['result']),
       resilience: serializer.fromJson<String?>(json['resilience']),
       label: serializer.fromJson<String?>(json['label']),
+      pdfPath: serializer.fromJson<String?>(json['pdfPath']),
+      algorithmVersion: serializer.fromJson<int>(json['algorithmVersion']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
     );
   }
@@ -242,6 +304,8 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
       'result': serializer.toJson<String>(result),
       'resilience': serializer.toJson<String?>(resilience),
       'label': serializer.toJson<String?>(label),
+      'pdfPath': serializer.toJson<String?>(pdfPath),
+      'algorithmVersion': serializer.toJson<int>(algorithmVersion),
       'createdAt': serializer.toJson<int>(createdAt),
     };
   }
@@ -252,6 +316,8 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
     String? result,
     Value<String?> resilience = const Value.absent(),
     Value<String?> label = const Value.absent(),
+    Value<String?> pdfPath = const Value.absent(),
+    int? algorithmVersion,
     int? createdAt,
   }) => HistoryRecord(
     id: id ?? this.id,
@@ -259,6 +325,8 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
     result: result ?? this.result,
     resilience: resilience.present ? resilience.value : this.resilience,
     label: label.present ? label.value : this.label,
+    pdfPath: pdfPath.present ? pdfPath.value : this.pdfPath,
+    algorithmVersion: algorithmVersion ?? this.algorithmVersion,
     createdAt: createdAt ?? this.createdAt,
   );
   HistoryRecord copyWithCompanion(HistoryRecordsCompanion data) {
@@ -270,6 +338,10 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
           ? data.resilience.value
           : this.resilience,
       label: data.label.present ? data.label.value : this.label,
+      pdfPath: data.pdfPath.present ? data.pdfPath.value : this.pdfPath,
+      algorithmVersion: data.algorithmVersion.present
+          ? data.algorithmVersion.value
+          : this.algorithmVersion,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
     );
   }
@@ -282,14 +354,24 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
           ..write('result: $result, ')
           ..write('resilience: $resilience, ')
           ..write('label: $label, ')
+          ..write('pdfPath: $pdfPath, ')
+          ..write('algorithmVersion: $algorithmVersion, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, params, result, resilience, label, createdAt);
+  int get hashCode => Object.hash(
+    id,
+    params,
+    result,
+    resilience,
+    label,
+    pdfPath,
+    algorithmVersion,
+    createdAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -299,6 +381,8 @@ class HistoryRecord extends DataClass implements Insertable<HistoryRecord> {
           other.result == this.result &&
           other.resilience == this.resilience &&
           other.label == this.label &&
+          other.pdfPath == this.pdfPath &&
+          other.algorithmVersion == this.algorithmVersion &&
           other.createdAt == this.createdAt);
 }
 
@@ -308,6 +392,8 @@ class HistoryRecordsCompanion extends UpdateCompanion<HistoryRecord> {
   final Value<String> result;
   final Value<String?> resilience;
   final Value<String?> label;
+  final Value<String?> pdfPath;
+  final Value<int> algorithmVersion;
   final Value<int> createdAt;
   const HistoryRecordsCompanion({
     this.id = const Value.absent(),
@@ -315,6 +401,8 @@ class HistoryRecordsCompanion extends UpdateCompanion<HistoryRecord> {
     this.result = const Value.absent(),
     this.resilience = const Value.absent(),
     this.label = const Value.absent(),
+    this.pdfPath = const Value.absent(),
+    this.algorithmVersion = const Value.absent(),
     this.createdAt = const Value.absent(),
   });
   HistoryRecordsCompanion.insert({
@@ -323,6 +411,8 @@ class HistoryRecordsCompanion extends UpdateCompanion<HistoryRecord> {
     required String result,
     this.resilience = const Value.absent(),
     this.label = const Value.absent(),
+    this.pdfPath = const Value.absent(),
+    this.algorithmVersion = const Value.absent(),
     required int createdAt,
   }) : params = Value(params),
        result = Value(result),
@@ -333,6 +423,8 @@ class HistoryRecordsCompanion extends UpdateCompanion<HistoryRecord> {
     Expression<String>? result,
     Expression<String>? resilience,
     Expression<String>? label,
+    Expression<String>? pdfPath,
+    Expression<int>? algorithmVersion,
     Expression<int>? createdAt,
   }) {
     return RawValuesInsertable({
@@ -341,6 +433,8 @@ class HistoryRecordsCompanion extends UpdateCompanion<HistoryRecord> {
       if (result != null) 'result': result,
       if (resilience != null) 'resilience': resilience,
       if (label != null) 'label': label,
+      if (pdfPath != null) 'pdf_path': pdfPath,
+      if (algorithmVersion != null) 'algorithm_version': algorithmVersion,
       if (createdAt != null) 'created_at': createdAt,
     });
   }
@@ -351,6 +445,8 @@ class HistoryRecordsCompanion extends UpdateCompanion<HistoryRecord> {
     Value<String>? result,
     Value<String?>? resilience,
     Value<String?>? label,
+    Value<String?>? pdfPath,
+    Value<int>? algorithmVersion,
     Value<int>? createdAt,
   }) {
     return HistoryRecordsCompanion(
@@ -359,6 +455,8 @@ class HistoryRecordsCompanion extends UpdateCompanion<HistoryRecord> {
       result: result ?? this.result,
       resilience: resilience ?? this.resilience,
       label: label ?? this.label,
+      pdfPath: pdfPath ?? this.pdfPath,
+      algorithmVersion: algorithmVersion ?? this.algorithmVersion,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -381,6 +479,12 @@ class HistoryRecordsCompanion extends UpdateCompanion<HistoryRecord> {
     if (label.present) {
       map['label'] = Variable<String>(label.value);
     }
+    if (pdfPath.present) {
+      map['pdf_path'] = Variable<String>(pdfPath.value);
+    }
+    if (algorithmVersion.present) {
+      map['algorithm_version'] = Variable<int>(algorithmVersion.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -395,6 +499,8 @@ class HistoryRecordsCompanion extends UpdateCompanion<HistoryRecord> {
           ..write('result: $result, ')
           ..write('resilience: $resilience, ')
           ..write('label: $label, ')
+          ..write('pdfPath: $pdfPath, ')
+          ..write('algorithmVersion: $algorithmVersion, ')
           ..write('createdAt: $createdAt')
           ..write(')'))
         .toString();
@@ -663,6 +769,8 @@ typedef $$HistoryRecordsTableCreateCompanionBuilder =
       required String result,
       Value<String?> resilience,
       Value<String?> label,
+      Value<String?> pdfPath,
+      Value<int> algorithmVersion,
       required int createdAt,
     });
 typedef $$HistoryRecordsTableUpdateCompanionBuilder =
@@ -672,6 +780,8 @@ typedef $$HistoryRecordsTableUpdateCompanionBuilder =
       Value<String> result,
       Value<String?> resilience,
       Value<String?> label,
+      Value<String?> pdfPath,
+      Value<int> algorithmVersion,
       Value<int> createdAt,
     });
 
@@ -706,6 +816,16 @@ class $$HistoryRecordsTableFilterComposer
 
   ColumnFilters<String> get label => $composableBuilder(
     column: $table.label,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get pdfPath => $composableBuilder(
+    column: $table.pdfPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get algorithmVersion => $composableBuilder(
+    column: $table.algorithmVersion,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -749,6 +869,16 @@ class $$HistoryRecordsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get pdfPath => $composableBuilder(
+    column: $table.pdfPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get algorithmVersion => $composableBuilder(
+    column: $table.algorithmVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -780,6 +910,14 @@ class $$HistoryRecordsTableAnnotationComposer
 
   GeneratedColumn<String> get label =>
       $composableBuilder(column: $table.label, builder: (column) => column);
+
+  GeneratedColumn<String> get pdfPath =>
+      $composableBuilder(column: $table.pdfPath, builder: (column) => column);
+
+  GeneratedColumn<int> get algorithmVersion => $composableBuilder(
+    column: $table.algorithmVersion,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -823,6 +961,8 @@ class $$HistoryRecordsTableTableManager
                 Value<String> result = const Value.absent(),
                 Value<String?> resilience = const Value.absent(),
                 Value<String?> label = const Value.absent(),
+                Value<String?> pdfPath = const Value.absent(),
+                Value<int> algorithmVersion = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
               }) => HistoryRecordsCompanion(
                 id: id,
@@ -830,6 +970,8 @@ class $$HistoryRecordsTableTableManager
                 result: result,
                 resilience: resilience,
                 label: label,
+                pdfPath: pdfPath,
+                algorithmVersion: algorithmVersion,
                 createdAt: createdAt,
               ),
           createCompanionCallback:
@@ -839,6 +981,8 @@ class $$HistoryRecordsTableTableManager
                 required String result,
                 Value<String?> resilience = const Value.absent(),
                 Value<String?> label = const Value.absent(),
+                Value<String?> pdfPath = const Value.absent(),
+                Value<int> algorithmVersion = const Value.absent(),
                 required int createdAt,
               }) => HistoryRecordsCompanion.insert(
                 id: id,
@@ -846,6 +990,8 @@ class $$HistoryRecordsTableTableManager
                 result: result,
                 resilience: resilience,
                 label: label,
+                pdfPath: pdfPath,
+                algorithmVersion: algorithmVersion,
                 createdAt: createdAt,
               ),
           withReferenceMapper: (p0) => p0

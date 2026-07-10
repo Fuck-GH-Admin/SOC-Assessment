@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -16,13 +14,40 @@ void main() {
     service = AiReportService(dio: mockDio);
   });
 
+  group('resolveChatCompletionsEndpoint', () {
+    test('appends the endpoint to a base URL', () {
+      expect(
+        resolveChatCompletionsEndpoint('https://example.com/v1/'),
+        'https://example.com/v1/chat/completions',
+      );
+    });
+
+    test('does not duplicate a full endpoint pasted by the user', () {
+      expect(
+        resolveChatCompletionsEndpoint(
+          'https://example.com/v1/chat/completions/',
+        ),
+        'https://example.com/v1/chat/completions',
+      );
+    });
+
+    test('appends the path before an existing query string', () {
+      expect(
+        resolveChatCompletionsEndpoint(
+          'https://example.com/v1?api-version=2026-01-01',
+        ),
+        'https://example.com/v1/chat/completions?api-version=2026-01-01',
+      );
+    });
+  });
+
   group('generateStream', () {
     const testBaseUrl = 'https://api.deepseek.com';
     const testApiKey = 'sk-test-key';
     const testModel = 'deepseek-v4-pro';
     const testPrompt = 'test prompt';
 
-    Response<dynamic> _makeResponse(String rawSseData) {
+    Response<dynamic> makeResponse(String rawSseData) {
       final responseBody = ResponseBody.fromString(rawSseData, 200);
       return Response<dynamic>(
         data: responseBody,
@@ -32,17 +57,19 @@ void main() {
     }
 
     test('正常流式返回文本内容', () async {
-      final response = _makeResponse(
+      final response = makeResponse(
         'data: {"choices":[{"delta":{"content":"你好"}}]}\n'
         'data: {"choices":[{"delta":{"content":"世界"}}]}\n'
         'data: [DONE]\n',
       );
-      when(() => mockDio.post(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-            cancelToken: any(named: 'cancelToken'),
-          )).thenAnswer((_) async => response);
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((_) async => response);
 
       final contents = <String?>[];
       final reasonings = <String?>[];
@@ -61,17 +88,19 @@ void main() {
     });
 
     test('[DONE] 终止符正确停止流', () async {
-      final response = _makeResponse(
+      final response = makeResponse(
         'data: {"choices":[{"delta":{"content":"第一段"}}]}\n'
         'data: [DONE]\n'
         'data: {"choices":[{"delta":{"content":"不应出现"}}]}\n',
       );
-      when(() => mockDio.post(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-            cancelToken: any(named: 'cancelToken'),
-          )).thenAnswer((_) async => response);
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((_) async => response);
 
       final contents = <String?>[];
       await for (final chunk in service.generateStream(
@@ -87,17 +116,19 @@ void main() {
     });
 
     test('非 data: 前缀的行被忽略', () async {
-      final response = _makeResponse(
+      final response = makeResponse(
         ': heartbeat\n'
         'data: {"choices":[{"delta":{"content":"内容"}}]}\n'
         'event: done\ndata: [DONE]\n',
       );
-      when(() => mockDio.post(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-            cancelToken: any(named: 'cancelToken'),
-          )).thenAnswer((_) async => response);
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((_) async => response);
 
       final contents = <String?>[];
       await for (final chunk in service.generateStream(
@@ -112,14 +143,72 @@ void main() {
       expect(contents.where((c) => c != null), ['内容']);
     });
 
+    test('accepts SSE data lines without a space after the colon', () async {
+      final response = makeResponse(
+        'data:{"choices":[{"delta":{"content":"无空格"}}]}\n'
+        'data:[DONE]\n',
+      );
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((_) async => response);
+
+      final contents = <String?>[];
+      await for (final chunk in service.generateStream(
+        baseUrl: testBaseUrl,
+        apiKey: testApiKey,
+        model: testModel,
+        prompt: testPrompt,
+      )) {
+        contents.add(chunk.content);
+      }
+
+      expect(contents.where((c) => c != null), ['无空格']);
+    });
+
+    test('omits Authorization for a custom endpoint with no API key', () async {
+      final response = makeResponse('data: [DONE]\n');
+      late Options capturedOptions;
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((invocation) async {
+        capturedOptions =
+            invocation.namedArguments[const Symbol('options')] as Options;
+        return response;
+      });
+
+      await service
+          .generateStream(
+            baseUrl: 'http://localhost:1234/v1',
+            apiKey: '',
+            model: testModel,
+            prompt: testPrompt,
+          )
+          .drain<void>();
+
+      expect(capturedOptions.headers?['Authorization'], isNull);
+      expect(capturedOptions.headers?['Content-Type'], 'application/json');
+    });
+
     test('DioException.cancel 被静默处理', () async {
       final cancelToken = CancelToken();
-      when(() => mockDio.post(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-            cancelToken: any(named: 'cancelToken'),
-          )).thenThrow(
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenThrow(
         DioException(
           type: DioExceptionType.cancel,
           requestOptions: RequestOptions(path: ''),
@@ -141,12 +230,14 @@ void main() {
     });
 
     test('网络错误向上传播', () async {
-      when(() => mockDio.post(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-            cancelToken: any(named: 'cancelToken'),
-          )).thenThrow(
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenThrow(
         DioException(
           type: DioExceptionType.connectionError,
           message: 'Connection refused',
@@ -154,30 +245,29 @@ void main() {
         ),
       );
 
-      expect(
-        () async {
-          await for (final _ in service.generateStream(
-            baseUrl: testBaseUrl,
-            apiKey: testApiKey,
-            model: testModel,
-            prompt: testPrompt,
-          )) {}
-        },
-        throwsA(isA<DioException>()),
-      );
+      expect(() async {
+        await for (final _ in service.generateStream(
+          baseUrl: testBaseUrl,
+          apiKey: testApiKey,
+          model: testModel,
+          prompt: testPrompt,
+        )) {}
+      }, throwsA(isA<DioException>()));
     });
 
     test('partial chunk（跨行分割）正确处理', () async {
-      final response = _makeResponse(
+      final response = makeResponse(
         'data: {"choices":[{"delta":{"content":"完整"}}]}\n'
         'data: [DONE]\n',
       );
-      when(() => mockDio.post(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-            cancelToken: any(named: 'cancelToken'),
-          )).thenAnswer((_) async => response);
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((_) async => response);
 
       final contents = <String?>[];
       await for (final chunk in service.generateStream(
@@ -193,18 +283,22 @@ void main() {
     });
 
     test('思考模式新增 extraThinkingBody', () async {
-      final response = _makeResponse(
+      final response = makeResponse(
         'data: {"choices":[{"delta":{"content":"思考结果"}}]}\n'
         'data: [DONE]\n',
       );
       final captured = <Map<String, dynamic>>[];
-      when(() => mockDio.post(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-            cancelToken: any(named: 'cancelToken'),
-          )).thenAnswer((inv) async {
-        captured.add(inv.namedArguments[Symbol('data')] as Map<String, dynamic>);
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((inv) async {
+        captured.add(
+          inv.namedArguments[Symbol('data')] as Map<String, dynamic>,
+        );
         return response;
       });
 
@@ -215,7 +309,9 @@ void main() {
         prompt: testPrompt,
         enableThinking: true,
         reasoningEffort: 'high',
-        extraThinkingBody: {'thinking': {'type': 'enabled'}},
+        extraThinkingBody: {
+          'thinking': {'type': 'enabled'},
+        },
       )) {}
 
       expect(captured, isNotEmpty);
@@ -225,18 +321,20 @@ void main() {
     });
 
     test('思考模式解析 reasoning_content 字段', () async {
-      final response = _makeResponse(
+      final response = makeResponse(
         'data: {"choices":[{"delta":{"reasoning_content":"正在思考..."}}]}\n'
         'data: {"choices":[{"delta":{"reasoning_content":"继续推理"}}]}\n'
         'data: {"choices":[{"delta":{"content":"最终结论"}}]}\n'
         'data: [DONE]\n',
       );
-      when(() => mockDio.post(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-            cancelToken: any(named: 'cancelToken'),
-          )).thenAnswer((_) async => response);
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((_) async => response);
 
       final reasonings = <String?>[];
       final contents = <String?>[];
@@ -258,16 +356,18 @@ void main() {
     });
 
     test('content 与 reasoning_content 同时存在的 chunk', () async {
-      final response = _makeResponse(
+      final response = makeResponse(
         'data: {"choices":[{"delta":{"content":"正文","reasoning_content":"思考"}}]}\n'
         'data: [DONE]\n',
       );
-      when(() => mockDio.post(
-            any(),
-            options: any(named: 'options'),
-            data: any(named: 'data'),
-            cancelToken: any(named: 'cancelToken'),
-          )).thenAnswer((_) async => response);
+      when(
+        () => mockDio.post(
+          any(),
+          options: any(named: 'options'),
+          data: any(named: 'data'),
+          cancelToken: any(named: 'cancelToken'),
+        ),
+      ).thenAnswer((_) async => response);
 
       final chunks = <AiStreamChunk>[];
       await for (final chunk in service.generateStream(

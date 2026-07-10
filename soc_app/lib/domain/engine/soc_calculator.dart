@@ -2,6 +2,37 @@ import '../models/calculation_params.dart';
 import '../models/calculation_result.dart';
 import '../models/soil_layer.dart';
 
+const int kSocAlgorithmVersion = 2;
+
+class SoilDepthDefinition {
+  final int key;
+  final int startCm;
+  final int endCm;
+  final String label;
+
+  const SoilDepthDefinition({
+    required this.key,
+    required this.startCm,
+    required this.endCm,
+    required this.label,
+  });
+
+  String get layerId => '$startCm-$endCm';
+  double get thicknessCm => (endCm - startCm).toDouble();
+}
+
+const List<SoilDepthDefinition> kSoilDepthDefinitions = [
+  SoilDepthDefinition(key: 10, startCm: 0, endCm: 20, label: '0-20 cm（表层）'),
+  SoilDepthDefinition(key: 25, startCm: 20, endCm: 30, label: '20-30 cm（亚表层）'),
+  SoilDepthDefinition(key: 35, startCm: 30, endCm: 40, label: '30-40 cm（中层）'),
+  SoilDepthDefinition(key: 45, startCm: 40, endCm: 50, label: '40-50 cm（深层）'),
+  SoilDepthDefinition(key: 55, startCm: 50, endCm: 60, label: '50-60 cm（底层）'),
+];
+
+const Set<String> kFertilizerTreatments = {'F', 'UNF'};
+const Set<int> kErosionLevels = {0, 10, 20, 30, 40, 50, 60, 70};
+const Set<int> kSoilDepthKeys = {10, 25, 35, 45, 55};
+
 const Map<String, Map<int, Map<int, double>>> _baseData = {
   'F': {
     0: {10: 23.90, 25: 16.64, 35: 13.09, 45: 10.30, 55: 8.10},
@@ -25,10 +56,40 @@ const Map<String, Map<int, Map<int, double>>> _baseData = {
   },
 };
 
-const Map<String, double> _fertilizerEffect = {'F': 1.0, 'UNF': 0.92};
+SoilDepthDefinition depthDefinitionFor(int depthKey) {
+  return kSoilDepthDefinitions.firstWhere(
+    (d) => d.key == depthKey,
+    orElse: () => throw ArgumentError.value(depthKey, 'depthKey', '未知土层键'),
+  );
+}
 
 List<String> validateInput(CalculationParams params) {
   final errors = <String>[];
+  final numericInputs = <(String, double)>[
+    ('土壤容重', params.bd),
+    ('pH值', params.ph),
+    ('含水量', params.wc),
+    ('黏粉粒含量', params.clay),
+    ('全氮含量', params.tn),
+    ('秸秆生物量', params.cropBiomass),
+    ('秸秆碳含量', params.strawCarbonRatio),
+    ('基础凋落物碳输入', params.litterCarbonInput),
+  ];
+  for (final (label, value) in numericInputs) {
+    if (!value.isFinite) {
+      errors.add('$label必须为有限数值');
+    }
+  }
+
+  if (!kFertilizerTreatments.contains(params.fert)) {
+    errors.add('未知施肥处理：${params.fert}');
+  }
+  if (!kErosionLevels.contains(params.erosion)) {
+    errors.add('侵蚀程度必须为0、10、20、30、40、50、60或70 cm');
+  }
+  if (!kSoilDepthKeys.contains(params.depth)) {
+    errors.add('土层必须为0-20、20-30、30-40、40-50或50-60 cm');
+  }
   if (params.bd < 0.5 || params.bd > 2.5) {
     errors.add('土壤容重应在0.5-2.5 g/cm^3范围内');
   }
@@ -50,18 +111,33 @@ List<String> validateInput(CalculationParams params) {
   if (params.strawCarbonRatio < 0 || params.strawCarbonRatio > 1) {
     errors.add('秸秆碳含量应在0-1范围内');
   }
-  for (var i = 0; i < params.soilLayers.length; i++) {
-    final layer = params.soilLayers[i];
-    if (layer.bd < 0.8 || layer.bd > 1.8) {
-      errors.add('第${i + 1}层土壤容重应在0.8-1.8 g/cm^3范围内');
-    }
-    if (layer.socValue < 0 || layer.socValue > 100) {
-      errors.add('第${i + 1}层SOC含量应在0-100 g/kg范围内');
-    }
-    if (layer.thickness <= 0) {
-      errors.add('第${i + 1}层厚度必须大于0');
+  if (params.litterCarbonInput < 0) {
+    errors.add('基础凋落物碳输入不能为负');
+  }
+
+  void validateLayers(List<SoilLayer> layers, String groupName) {
+    for (var i = 0; i < layers.length; i++) {
+      final layer = layers[i];
+      if (!layer.bd.isFinite ||
+          !layer.socValue.isFinite ||
+          !layer.thickness.isFinite) {
+        errors.add('$groupName第${i + 1}层包含非有限数值');
+        continue;
+      }
+      if (layer.bd < 0.5 || layer.bd > 2.5) {
+        errors.add('$groupName第${i + 1}层土壤容重应在0.5-2.5 g/cm^3范围内');
+      }
+      if (layer.socValue < 0 || layer.socValue > 100) {
+        errors.add('$groupName第${i + 1}层SOC含量应在0-100 g/kg范围内');
+      }
+      if (layer.thickness <= 0) {
+        errors.add('$groupName第${i + 1}层厚度必须大于0');
+      }
     }
   }
+
+  validateLayers(params.soilLayers, '当前');
+  validateLayers(params.initialLayers, '参考');
   return errors;
 }
 
@@ -69,63 +145,71 @@ double? lookupBaseSOC(String fert, int erosion, int depth) {
   return _baseData[fert]?[erosion]?[depth];
 }
 
+double calculateSOCValue(String fert, int erosion, int depth) {
+  final baseSOC = lookupBaseSOC(fert, erosion, depth);
+  if (baseSOC == null) {
+    throw ArgumentError('没有找到施肥=$fert、侵蚀=$erosion、土层键=$depth 的SOC基础数据');
+  }
+  return baseSOC.clamp(0, double.infinity);
+}
+
 double calculateSOC(CalculationParams params) {
-  final baseSOC = _baseData[params.fert]?[params.erosion]?[params.depth] ?? 10.0;
-  final fertFactor = _fertilizerEffect[params.fert] ?? 1.0;
-  return (baseSOC * fertFactor).clamp(0, double.infinity);
+  return calculateSOCValue(params.fert, params.erosion, params.depth);
 }
 
-double calculateCarbonStorage(double soc, double bd, int depthCm) {
-  return ((soc * bd * (depthCm < 20 ? depthCm : 20)) / 100)
-      .clamp(0, double.infinity);
+double calculateCarbonStorage(double soc, double bd, int depthKey) {
+  final layer = depthDefinitionFor(depthKey);
+  return ((soc * bd * layer.thicknessCm) / 100).clamp(0, double.infinity);
 }
 
-double calculateCarbonDensity(double carbonStorage, int depthCm) {
-  if (depthCm <= 0) return 0;
-  return (carbonStorage / (depthCm / 100)).clamp(0, double.infinity);
+double calculateCarbonDensity(double carbonStorage, int depthKey) {
+  final thicknessCm = depthDefinitionFor(depthKey).thicknessCm;
+  return (carbonStorage / (thicknessCm / 100)).clamp(0, double.infinity);
 }
 
-double calculateNetChange(double soc, String fert, int erosion) {
-  final erosionImpact = (erosion / 70) * 0.3;
-  final fertImpact = fert == 'F' ? 0.05 : -0.02;
-  return soc * (1 + fertImpact - erosionImpact);
+double calculateNetChange(double currentPool, double referencePool) {
+  return currentPool - referencePool;
 }
-
 
 double calculateRecoveryRate(double netChange, [int years = 20]) {
-  return (netChange / years).clamp(0, double.infinity);
+  if (years <= 0) return 0;
+  return netChange / years;
 }
 
 List<SoilLayer> splitToLayers(double socValue, double bd, int depthCm) {
-  if (depthCm <= 20) {
-    return [
-      SoilLayer(
-        layerId: '0-$depthCm',
-        socValue: socValue,
-        bd: bd,
-        thickness: depthCm.toDouble(),
-      ),
-    ];
-  }
+  final layer = depthDefinitionFor(depthCm);
   return [
-    SoilLayer(layerId: '0-20', socValue: socValue, bd: bd, thickness: 20.0),
     SoilLayer(
-      layerId: '20-$depthCm',
+      layerId: layer.layerId,
       socValue: socValue,
       bd: bd,
-      thickness: (depthCm - 20).toDouble(),
+      thickness: layer.thicknessCm,
     ),
   ];
 }
 
-double calculateLossRate(double soc, String fert) {
-  final baseSoc = _baseData[fert]?[0]?[10];
-  if (baseSoc == null) return 0;
-  return ((baseSoc - soc) / baseSoc * 100).clamp(0, double.infinity);
+List<SoilLayer> buildProfileLayers(String fert, int erosion, double bd) {
+  return kSoilDepthDefinitions.map((layer) {
+    return SoilLayer(
+      layerId: layer.layerId,
+      socValue: calculateSOCValue(fert, erosion, layer.key),
+      bd: bd,
+      thickness: layer.thicknessCm,
+    );
+  }).toList();
 }
 
-({bool success, CalculationResult? result, List<String> errors})
-    computeAll(CalculationParams params) {
+double calculateLossRate(double currentSoc, double referenceSoc) {
+  if (referenceSoc <= 0) return 0;
+  return ((referenceSoc - currentSoc) / referenceSoc * 100).clamp(
+    0,
+    double.infinity,
+  );
+}
+
+({bool success, CalculationResult? result, List<String> errors}) computeAll(
+  CalculationParams params,
+) {
   final errors = validateInput(params);
   if (errors.isNotEmpty) {
     return (success: false, result: null, errors: errors);
@@ -135,9 +219,15 @@ double calculateLossRate(double soc, String fert) {
   final depthVal = params.depth;
   final carbonStorage = calculateCarbonStorage(soc, params.bd, depthVal);
   final carbonDensity = calculateCarbonDensity(carbonStorage, depthVal);
-  final netChange = calculateNetChange(soc, params.fert, params.erosion);
+  final referenceSoc = calculateSOCValue(params.fert, 0, params.depth);
+  final referenceStorage = calculateCarbonStorage(
+    referenceSoc,
+    params.bd,
+    params.depth,
+  );
+  final netChange = calculateNetChange(carbonStorage, referenceStorage);
   final recoveryRate = calculateRecoveryRate(netChange);
-  final lossRate = calculateLossRate(soc, params.fert);
+  final lossRate = calculateLossRate(soc, referenceSoc);
 
   return (
     success: true,

@@ -2,17 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:soc_app/domain/engine/soc_calculator.dart';
 
-const _depthLabels = ['表层', '亚表层', '中层', '深层', '底层'];
+const _depthLabels = ['0-20', '20-30', '30-40', '40-50', '50-60'];
 
 class DepthLineChart extends StatelessWidget {
   final String fert;
   final int erosion;
 
-  const DepthLineChart({
-    super.key,
-    required this.fert,
-    required this.erosion,
-  });
+  const DepthLineChart({super.key, required this.fert, required this.erosion});
 
   @override
   Widget build(BuildContext context) {
@@ -21,8 +17,8 @@ class DepthLineChart extends StatelessWidget {
 
     final socValues = depths.map((i) {
       for (final e in depthsMap.entries) {
-        final v = lookupBaseSOC(fert, erosion, e.key);
-        if (e.value == i && v != null) return v;
+        final v = calculateSOCValue(fert, erosion, e.key);
+        if (e.value == i) return v;
       }
       return 0.0;
     }).toList();
@@ -30,8 +26,11 @@ class DepthLineChart extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('SOC含量的垂直分布特征',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+        const Text(
+          'SOC含量的垂直分布特征',
+          style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+        ),
+        const Text('纵轴：SOC (g/kg)；横轴：土层范围', style: TextStyle(fontSize: 10)),
         const SizedBox(height: 8),
         SizedBox(
           height: 220,
@@ -44,16 +43,13 @@ class DepthLineChart extends StatelessWidget {
                       .entries
                       .map((e) => FlSpot(e.key.toDouble(), e.value))
                       .toList(),
-                  isCurved: true,
-                  curveSmoothness: 0.4,
+                  isCurved: false,
                   color: const Color(0xFF00D9A5),
                   barWidth: 2,
                   dotData: FlDotData(
                     show: true,
                     getDotPainter: (_, a2, a3, a4) =>
-                        FlDotCirclePainter(
-                      color: const Color(0xFF00D9A5),
-                    ),
+                        FlDotCirclePainter(color: const Color(0xFF00D9A5)),
                   ),
                   belowBarData: BarAreaData(
                     show: true,
@@ -66,8 +62,10 @@ class DepthLineChart extends StatelessWidget {
                   sideTitles: SideTitles(
                     showTitles: true,
                     reservedSize: 40,
-                    getTitlesWidget: (v, _) => Text('${v.toInt()}',
-                        style: const TextStyle(fontSize: 10)),
+                    getTitlesWidget: (v, _) => Text(
+                      '${v.toInt()}',
+                      style: const TextStyle(fontSize: 10),
+                    ),
                   ),
                 ),
                 bottomTitles: AxisTitles(
@@ -78,15 +76,19 @@ class DepthLineChart extends StatelessWidget {
                       if (idx < 0 || idx >= _depthLabels.length) {
                         return const Text('');
                       }
-                      return Text(_depthLabels[idx],
-                          style: const TextStyle(fontSize: 9));
+                      return Text(
+                        _depthLabels[idx],
+                        style: const TextStyle(fontSize: 8),
+                      );
                     },
                   ),
                 ),
                 topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
+                  sideTitles: SideTitles(showTitles: false),
+                ),
                 rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false)),
+                  sideTitles: SideTitles(showTitles: false),
+                ),
               ),
               borderData: FlBorderData(show: false),
               gridData: const FlGridData(show: true),

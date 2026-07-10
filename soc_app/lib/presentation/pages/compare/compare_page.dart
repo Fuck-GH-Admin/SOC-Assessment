@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:soc_app/domain/engine/soc_calculator.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
 import 'package:soc_app/domain/models/calculation_result.dart';
 import 'package:soc_app/domain/models/resilience_result.dart';
@@ -14,7 +15,7 @@ class ComparePage extends ConsumerStatefulWidget {
 }
 
 class _ComparePageState extends ConsumerState<ComparePage> {
-  final Set<int> _selectedIds = {};
+  final List<int> _selectedIds = [];
 
   @override
   Widget build(BuildContext context) {
@@ -29,8 +30,12 @@ class _ComparePageState extends ConsumerState<ComparePage> {
           if (records.isEmpty) {
             return const Center(child: Text('暂无历史记录'));
           }
-          final selected = records
-              .where((r) => _selectedIds.contains(r['id'] as int))
+          final recordsById = {
+            for (final record in records) record['id'] as int: record,
+          };
+          final selected = _selectedIds
+              .map((id) => recordsById[id])
+              .whereType<Map<String, dynamic>>()
               .toList();
 
           return Column(
@@ -40,10 +45,7 @@ class _ComparePageState extends ConsumerState<ComparePage> {
                 child: _buildRecordList(records),
               ),
               if (selected.length >= 2)
-                Expanded(
-                  flex: 3,
-                  child: _buildComparisonView(selected),
-                ),
+                Expanded(flex: 3, child: _buildComparisonView(selected)),
             ],
           );
         },
@@ -54,19 +56,24 @@ class _ComparePageState extends ConsumerState<ComparePage> {
   static const _paramLabels = {
     'fert': '施肥',
     'erosion': '侵蚀(cm)',
+    'depth': '土层',
     'bd': '容重(g/cm^3)',
-    'ph': 'pH',
-    'wc': '含水(%)',
-    'clay': '黏粉粒(%)',
-    'tn': '全氮(g/kg)',
+    'ph': 'pH（辅助）',
+    'wc': '含水（辅助，%）',
+    'clay': '黏粉粒（辅助，%）',
+    'tn': '全氮（辅助，g/kg）',
+    'cropBiomass': '秸秆生物量(kg/ha)',
+    'strawCarbonRatio': '秸秆碳比例',
+    'litterCarbonInput': '基础凋落物(kg C/m^2)',
   };
 
   static const _resultLabels = {
     'soc': 'SOC(g/kg)',
-    'carbonStorage': '碳储量(kg/m^2)',
-    'carbonDensity': '碳密度(kg/m^3)',
-    'recoveryRate': '恢复速率(kg/m^2/yr)',
-    'lossRate': '损失率(%)',
+    'carbonStorage': '当前土层碳储量(kg/m^2)',
+    'carbonDensity': '当前土层碳密度(kg/m^3)',
+    'netChange': '当前土层相对CK碳库差(kg/m^2)',
+    'recoveryRate': '当前土层差值/20年折算代理(kg/m^2/yr)',
+    'lossRate': '当前土层相对CK损失率(%)',
   };
 
   Widget _buildRecordList(List<Map<String, dynamic>> records) {
@@ -84,30 +91,35 @@ class _ComparePageState extends ConsumerState<ComparePage> {
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           child: CheckboxListTile(
             value: checked,
-            title: Text(label ??
-                'SOC 计算 #$id'),
+            title: Text(label ?? 'SOC 计算 #$id'),
             subtitle: Text(
               '${createdAt.toString().substring(0, 16)} | '
               'SOC: ${result.soc.toStringAsFixed(2)} g/kg',
               style: const TextStyle(fontSize: 12),
             ),
             onChanged: (v) {
+              if (v == true && _selectedIds.length >= 5) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(const SnackBar(content: Text('最多同时选择 5 条记录')));
+                return;
+              }
               setState(() {
                 if (v == true) {
-                  if (_selectedIds.length < 5) _selectedIds.add(id);
+                  _selectedIds.add(id);
                 } else {
                   _selectedIds.remove(id);
                 }
               });
             },
             secondary: CircleAvatar(
-              backgroundColor: _colorForIndex(
-                  _selectedIds.toList().indexOf(id)),
+              backgroundColor: _colorForIndex(_selectedIds.indexOf(id)),
               radius: 14,
               child: checked
-                  ? Text('${_selectedIds.toList().indexOf(id) + 1}',
-                      style: const TextStyle(
-                          fontSize: 11, color: Colors.white))
+                  ? Text(
+                      '${_selectedIds.indexOf(id) + 1}',
+                      style: const TextStyle(fontSize: 11, color: Colors.white),
+                    )
                   : null,
             ),
           ),
@@ -117,46 +129,58 @@ class _ComparePageState extends ConsumerState<ComparePage> {
   }
 
   Widget _buildComparisonView(List<Map<String, dynamic>> records) {
+    final algorithmVersions = records
+        .map((r) => r['algorithmVersion'] as int)
+        .toSet();
+    final mixedAlgorithms = algorithmVersions.length > 1;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('参数对比',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium),
+          if (mixedAlgorithms)
+            Card(
+              color: Theme.of(context).colorScheme.errorContainer,
+              child: const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text('所选记录使用了不同算法版本。数值可供追溯，但不应直接作横向结论。'),
+              ),
+            ),
+          Text('参数对比', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           _buildParamTable(records),
           const SizedBox(height: 16),
-          Text('结果对比',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium),
+          Text('结果对比', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           _buildResultTable(records),
           const SizedBox(height: 16),
-          Text('雷达图对比',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium),
+          Text('雷达图对比', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          SizedBox(
-            height: 300,
-            child: ComparisonRadarChart(
-              result1: records[0]['result'] as CalculationResult,
-              result2: records[1]['result'] as CalculationResult,
-              label1: records[0]['label'] as String? ?? '#1',
-              label2: records[1]['label'] as String? ?? '#2',
+          if (records.length > 2)
+            const Text(
+              '提示：当前雷达图仅展示前两条记录，完整数值请以表格为准。',
+              style: TextStyle(fontSize: 12),
             ),
-          ),
+          if (mixedAlgorithms)
+            const Text('算法版本不一致，已隐藏雷达图。')
+          else
+            SizedBox(
+              height: 320,
+              child: ComparisonRadarChart(
+                result1: records[0]['result'] as CalculationResult,
+                result2: records[1]['result'] as CalculationResult,
+                label1: records[0]['label'] as String? ?? '#1',
+                label2: records[1]['label'] as String? ?? '#2',
+              ),
+            ),
           if (records.length >= 2 &&
               records.any((r) => r['resilience'] != null)) ...[
             const SizedBox(height: 16),
-            Text('恢复力对比',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium),
+            Text(
+              'CK参考剖面差与情景对比',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             _buildResilienceTable(records),
           ],
@@ -167,9 +191,12 @@ class _ComparePageState extends ConsumerState<ComparePage> {
   }
 
   Widget _buildParamTable(List<Map<String, dynamic>> records) {
-    final headers = ['参数', ...records.map((r) => r['label'] as String? ??
-        '#${r['id']}')];
+    final headers = [
+      '参数',
+      ...records.map((r) => r['label'] as String? ?? '#${r['id']}'),
+    ];
     final rows = <List<String>>[];
+    rows.add(['算法版本', ...records.map((r) => 'v${r['algorithmVersion']}')]);
     for (final entry in _paramLabels.entries) {
       final row = [entry.value];
       for (final r in records) {
@@ -185,25 +212,40 @@ class _ComparePageState extends ConsumerState<ComparePage> {
       child: DataTable(
         columnSpacing: 16,
         columns: headers
-            .map((h) => DataColumn(
-                label: Text(h,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 12))))
+            .map(
+              (h) => DataColumn(
+                label: Text(
+                  h,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            )
             .toList(),
         rows: rows
-            .map((cells) => DataRow(
+            .map(
+              (cells) => DataRow(
                 cells: cells
-                    .map((c) => DataCell(Text(c,
-                        style: const TextStyle(fontSize: 12))))
-                    .toList()))
+                    .map(
+                      (c) => DataCell(
+                        Text(c, style: const TextStyle(fontSize: 12)),
+                      ),
+                    )
+                    .toList(),
+              ),
+            )
             .toList(),
       ),
     );
   }
 
   Widget _buildResultTable(List<Map<String, dynamic>> records) {
-    final headers = ['指标', ...records.map((r) => r['label'] as String? ??
-        '#${r['id']}')];
+    final headers = [
+      '指标',
+      ...records.map((r) => r['label'] as String? ?? '#${r['id']}'),
+    ];
     final rows = <List<String>>[];
     for (final entry in _resultLabels.entries) {
       final row = [entry.value];
@@ -220,17 +262,30 @@ class _ComparePageState extends ConsumerState<ComparePage> {
       child: DataTable(
         columnSpacing: 16,
         columns: headers
-            .map((h) => DataColumn(
-                label: Text(h,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 12))))
+            .map(
+              (h) => DataColumn(
+                label: Text(
+                  h,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            )
             .toList(),
         rows: rows
-            .map((cells) => DataRow(
+            .map(
+              (cells) => DataRow(
                 cells: cells
-                    .map((c) => DataCell(Text(c,
-                        style: const TextStyle(fontSize: 12))))
-                    .toList()))
+                    .map(
+                      (c) => DataCell(
+                        Text(c, style: const TextStyle(fontSize: 12)),
+                      ),
+                    )
+                    .toList(),
+              ),
+            )
             .toList(),
       ),
     );
@@ -240,14 +295,16 @@ class _ComparePageState extends ConsumerState<ComparePage> {
     final resilienceLabels = {
       'carbonPool_0_20': '碳库0-20(kg/m^2)',
       'carbonPool_0_60': '剖面碳库(kg/m^2)',
-      'netChange_20yr': '20年净变(kg/m^2)',
-      'netChange_100yr': '100年净变(kg/m^2)',
-      'recoveryRate_annual': '年恢复(kg/m^2/yr)',
-      'status': '状态',
+      'netChange_20yr': '0-60相对CK差·源文档20年口径(kg/m^2)',
+      'netChange_100yr': '0-20相对CK差·源文档100年口径(kg/m^2)',
+      'recoveryRate_annual': '0-60差值/20年折算代理(kg/m^2/yr)',
+      'status': '相对CK状态',
     };
 
-    final headers = ['指标', ...records
-        .map((r) => r['label'] as String? ?? '#${r['id']}')];
+    final headers = [
+      '指标',
+      ...records.map((r) => r['label'] as String? ?? '#${r['id']}'),
+    ];
     final rows = <List<String>>[];
     for (final entry in resilienceLabels.entries) {
       final row = [entry.value];
@@ -268,17 +325,30 @@ class _ComparePageState extends ConsumerState<ComparePage> {
       child: DataTable(
         columnSpacing: 16,
         columns: headers
-            .map((h) => DataColumn(
-                label: Text(h,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 12))))
+            .map(
+              (h) => DataColumn(
+                label: Text(
+                  h,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            )
             .toList(),
         rows: rows
-            .map((cells) => DataRow(
+            .map(
+              (cells) => DataRow(
                 cells: cells
-                    .map((c) => DataCell(Text(c,
-                        style: const TextStyle(fontSize: 12))))
-                    .toList()))
+                    .map(
+                      (c) => DataCell(
+                        Text(c, style: const TextStyle(fontSize: 12)),
+                      ),
+                    )
+                    .toList(),
+              ),
+            )
             .toList(),
       ),
     );
@@ -290,6 +360,12 @@ class _ComparePageState extends ConsumerState<ComparePage> {
         return p.fert == 'F' ? '施肥' : '不施肥';
       case 'erosion':
         return p.erosion.toString();
+      case 'depth':
+        try {
+          return depthDefinitionFor(p.depth).label;
+        } on ArgumentError {
+          return '未知土层键(${p.depth})';
+        }
       case 'bd':
         return p.bd.toStringAsFixed(2);
       case 'ph':
@@ -300,6 +376,12 @@ class _ComparePageState extends ConsumerState<ComparePage> {
         return '${p.clay.toStringAsFixed(1)}%';
       case 'tn':
         return p.tn.toStringAsFixed(2);
+      case 'cropBiomass':
+        return p.cropBiomass.toStringAsFixed(0);
+      case 'strawCarbonRatio':
+        return p.strawCarbonRatio.toStringAsFixed(3);
+      case 'litterCarbonInput':
+        return p.litterCarbonInput.toStringAsFixed(3);
       default:
         return '--';
     }
@@ -313,6 +395,8 @@ class _ComparePageState extends ConsumerState<ComparePage> {
         return r.carbonStorage.toStringAsFixed(2);
       case 'carbonDensity':
         return r.carbonDensity.toStringAsFixed(2);
+      case 'netChange':
+        return r.netChange.toStringAsFixed(2);
       case 'recoveryRate':
         return r.recoveryRate.toStringAsFixed(3);
       case 'lossRate':
@@ -349,8 +433,6 @@ class _ComparePageState extends ConsumerState<ComparePage> {
       Color(0xFFFFD700),
       Color(0xFF9B59B6),
     ];
-    return index >= 0 && index < colors.length
-        ? colors[index]
-        : Colors.grey;
+    return index >= 0 && index < colors.length ? colors[index] : Colors.grey;
   }
 }
