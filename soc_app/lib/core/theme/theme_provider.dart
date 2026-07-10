@@ -64,8 +64,10 @@ class SeedColorNotifier extends Notifier<Color> {
   }
 }
 
-final themeModeProvider =
-    NotifierProvider<ThemeModeNotifier, ThemeMode>(ThemeModeNotifier.new);
+final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
+  ThemeModeNotifier.new,
+);
 
-final seedColorProvider =
-    NotifierProvider<SeedColorNotifier, Color>(SeedColorNotifier.new);
+final seedColorProvider = NotifierProvider<SeedColorNotifier, Color>(
+  SeedColorNotifier.new,
+);

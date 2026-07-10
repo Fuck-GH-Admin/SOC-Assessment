@@ -2,8 +2,14 @@ class CalculationResult {
   final double soc;
   final double carbonStorage;
   final double carbonDensity;
+
+  /// 当前土层碳库相对同施肥、侵蚀0cm（CK）土层碳库的差值，kg C/m²。
   final double netChange;
+
+  /// [netChange] 按20年平均折算的代理值，不是逐年模型输出。
   final double recoveryRate;
+
+  /// 当前土层SOC相对同施肥、同土层CK的损失百分比。
   final double lossRate;
 
   const CalculationResult({

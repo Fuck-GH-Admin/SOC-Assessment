@@ -7,6 +7,7 @@ class AiProviderPreset {
   final String baseUrl;
   final String defaultModel;
   final bool supportsThinking;
+  final bool apiKeyRequired;
   final Map<String, dynamic>? extraBody;
 
   const AiProviderPreset({
@@ -15,6 +16,7 @@ class AiProviderPreset {
     required this.baseUrl,
     required this.defaultModel,
     this.supportsThinking = false,
+    this.apiKeyRequired = true,
     this.extraBody,
   });
 }
@@ -26,7 +28,9 @@ const kAiProviderPresets = [
     baseUrl: 'https://api.deepseek.com',
     defaultModel: 'deepseek-v4-flash',
     supportsThinking: true,
-    extraBody: {'thinking': {'type': 'enabled'}},
+    extraBody: {
+      'thinking': {'type': 'enabled'},
+    },
   ),
   AiProviderPreset(
     id: 'openai',
@@ -38,7 +42,7 @@ const kAiProviderPresets = [
     id: 'groq',
     displayName: 'Groq',
     baseUrl: 'https://api.groq.com/openai/v1',
-    defaultModel: 'qwen/qwen3.6-27b',
+    defaultModel: 'openai/gpt-oss-120b',
   ),
   AiProviderPreset(
     id: 'openrouter',
@@ -51,6 +55,7 @@ const kAiProviderPresets = [
     displayName: '自定义',
     baseUrl: '',
     defaultModel: '',
+    apiKeyRequired: false,
   ),
 ];
 
@@ -67,11 +72,11 @@ class AiConfigService {
   final FlutterSecureStorage _secure;
 
   AiConfigService({FlutterSecureStorage? secure})
-      : _secure = secure ??
-            const FlutterSecureStorage(
-              wOptions:
-                  WindowsOptions(useBackwardCompatibility: false),
-            );
+    : _secure =
+          secure ??
+          const FlutterSecureStorage(
+            wOptions: WindowsOptions(useBackwardCompatibility: false),
+          );
 
   // --- API Key (secure storage) ---
 
@@ -84,13 +89,11 @@ class AiConfigService {
   }
 
   Future<void> writeApiKey(String value) async {
-    try {
-      if (value.isEmpty) {
-        await _secure.delete(key: _keyApiKey);
-      } else {
-        await _secure.write(key: _keyApiKey, value: value);
-      }
-    } catch (_) {}
+    if (value.isEmpty) {
+      await _secure.delete(key: _keyApiKey);
+    } else {
+      await _secure.write(key: _keyApiKey, value: value);
+    }
   }
 
   Future<bool> hasApiKey() async {
@@ -102,7 +105,11 @@ class AiConfigService {
 
   Future<String> readPresetId() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyPresetId) ?? _defaultPresetId;
+    final saved = prefs.getString(_keyPresetId);
+    if (saved == null || !kAiProviderPresets.any((p) => p.id == saved)) {
+      return _defaultPresetId;
+    }
+    return saved;
   }
 
   Future<void> writePresetId(String value) async {
@@ -116,8 +123,10 @@ class AiConfigService {
 
   Future<AiProviderPreset> readPreset() async {
     final id = await readPresetId();
-    return kAiProviderPresets.firstWhere((p) => p.id == id,
-        orElse: () => kAiProviderPresets.last);
+    return kAiProviderPresets.firstWhere(
+      (p) => p.id == id,
+      orElse: () => kAiProviderPresets.first,
+    );
   }
 
   // --- Base URL ---
@@ -174,8 +183,10 @@ class AiConfigService {
 
   Future<String> readReasoningEffort() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_keyReasoningEffort) ??
-        _defaultReasoningEffort;
+    final value = prefs.getString(_keyReasoningEffort);
+    return const {'low', 'medium', 'high'}.contains(value)
+        ? value!
+        : _defaultReasoningEffort;
   }
 
   Future<void> writeReasoningEffort(String value) async {
@@ -186,9 +197,7 @@ class AiConfigService {
   // --- Bulk ---
 
   Future<void> clearAll() async {
-    try {
-      await _secure.delete(key: _keyApiKey);
-    } catch (_) {}
+    await _secure.delete(key: _keyApiKey);
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyBaseUrl);
     await prefs.remove(_keyApiModel);

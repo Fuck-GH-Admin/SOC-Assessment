@@ -20,9 +20,7 @@
 
 ### API Key for Testing
 
-```
-sk-565d35ec689044799ca458896ae149a9  (DeepSeek)
-```
+不要在仓库中写入真实 API Key。测试时通过设置页手动填写，或使用本机未提交的环境/密钥管理方案。
 
 ### Preset Config
 
