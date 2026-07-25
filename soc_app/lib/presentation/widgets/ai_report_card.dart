@@ -51,16 +51,96 @@ class AiReportCard extends ConsumerWidget {
 
         // 报告正文：流式期间也用 MarkdownBody 渲染，避免裸露 Markdown 符号
         if (state.streamContent.isNotEmpty)
-          Container(
-            constraints: const BoxConstraints(maxHeight: 520),
-            margin: const EdgeInsets.only(top: 4),
-            child: SingleChildScrollView(
-              child: MarkdownBody(
-                data: state.streamContent,
-                selectable: true,
-                styleSheet: _buildMarkdownStyle(theme),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!state.isGenerating && state.quality == ReportQuality.partial)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.warningContainer?.withValues(alpha: 0.4),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: theme.colorScheme.warning?.withValues(alpha: 0.4) ?? theme.colorScheme.primary.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.info_outline,
+                          size: 14,
+                          color: theme.colorScheme.warning ?? theme.colorScheme.primary,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'AI 报告部分内容可能不完整，请结合图表参考',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.warning ?? theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (!state.isGenerating && state.quality == ReportQuality.truncated)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.errorContainer.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: theme.colorScheme.error.withValues(alpha: 0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          size: 14,
+                          color: theme.colorScheme.error,
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'AI 报告可能已被截断，请尝试重新生成',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: theme.colorScheme.error,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Container(
+                margin: const EdgeInsets.only(top: 4),
+                constraints: const BoxConstraints(maxHeight: 520),
+                child: SingleChildScrollView(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 480),
+                      child: MarkdownBody(
+                        data: state.streamContent,
+                        selectable: true,
+                        styleSheet: _buildMarkdownStyle(theme),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
 
         if (state.error != null)
@@ -129,9 +209,10 @@ class AiReportCard extends ConsumerWidget {
       ),
       blockquotePadding: const EdgeInsets.only(left: 10),
       tableHead: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-      tableBody: TextStyle(fontSize: 13, height: 1.4),
+      tableBody: TextStyle(fontSize: 12, height: 1.3),
       tableBorder: TableBorder.all(color: theme.dividerColor, width: 0.5),
-      tableColumnWidth: const FlexColumnWidth(),
+      tableColumnWidth: const IntrinsicColumnWidth(),
+      tableVerticalAlignment: TableVerticalAlignment.top,
       horizontalRuleDecoration: BoxDecoration(
         border: Border(top: BorderSide(color: theme.dividerColor, width: 1)),
       ),
@@ -201,16 +282,13 @@ class _ReasoningTileState extends State<_ReasoningTile> {
           if (_expanded)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 300),
-                child: SingleChildScrollView(
-                  child: Text(
-                    widget.reasoning,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.5,
-                      color: widget.theme.colorScheme.onSurfaceVariant,
-                    ),
+              child: SingleChildScrollView(
+                child: Text(
+                  widget.reasoning,
+                  style: TextStyle(
+                    fontSize: 12,
+                    height: 1.5,
+                    color: widget.theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
