@@ -81,21 +81,33 @@ class PdfExporter {
               height: 300,
             ),
           ],
-          if (aiReport != null && aiReport.isNotEmpty) ...[
-            pw.SizedBox(height: 16),
-            _sectionTitle('AI 评估报告', font),
-            pw.Paragraph(
-              text: aiReport
-                  .replaceAll(RegExp(r'^#{1,6}\s+', multiLine: true), '')
-                  .replaceAll(RegExp(r'\*{1,2}([^*]+)\*{1,2}'), r'$1')
-                  .replaceAll(RegExp(r'\n{3,}'), '\n\n')
-                  .trim(),
-              style: pw.TextStyle(fontSize: 9, font: font),
-            ),
-          ],
         ],
       ),
     );
+
+    if (aiReport != null && aiReport.isNotEmpty) {
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(40),
+          build: (context) => [
+            pw.Header(
+              level: 0,
+              child: pw.Text(
+                'AI 评估报告',
+                style: pw.TextStyle(
+                  fontSize: 20,
+                  fontWeight: pw.FontWeight.bold,
+                  font: font,
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 12),
+            ..._renderMarkdown(aiReport, font),
+          ],
+        ),
+      );
+    }
 
     return pdf.save();
   }
@@ -124,8 +136,8 @@ class PdfExporter {
       headerCount: 1,
       headers: ['参数', '数值', '说明'],
       data: [
-        ['算法口径', 'v$kSocAlgorithmVersion', '用于区分历史计算版本'],
-        ['施肥处理', params.fert, params.fert == 'F' ? '施肥' : '不施肥'],
+        ['算法口径', 'v\$kSocAlgorithmVersion', '用于区分历史计算版本'],
+        ['施肥处理', params.fert == 'F' ? '施肥' : '不施肥', ''],
         ['侵蚀强度', '${params.erosion} cm', '土壤侵蚀深度'],
         ['土层', depthDefinitionFor(params.depth).label, '当前计算土层'],
         ['统一土壤容重', params.bd.toStringAsFixed(2), 'g/cm^3；用于全部土层'],
@@ -249,6 +261,239 @@ class PdfExporter {
       },
     );
   }
+
+  // ── Markdown rendering helpers ───────────────────────────────────
+
+  static List<pw.Widget> _renderMarkdown(String markdown, pw.Font font) {
+    final lines = markdown.split('\n');
+    final widgets = <pw.Widget>[];
+    var i = 0;
+
+    while (i < lines.length) {
+      final trimmed = lines[i].trim();
+
+      // Skip empty lines
+      if (trimmed.isEmpty) {
+        i++;
+        continue;
+      }
+
+      // Section header: "数字. 文本" (e.g., "1. 数据解读")
+      final sectionMatch = RegExp(r'^\d+\.\s+(.+)$').firstMatch(trimmed);
+      if (sectionMatch != null) {
+        widgets.add(_sectionTitle(sectionMatch.group(1)!, font));
+        i++;
+        continue;
+      }
+
+      // Sub-section: "### 文本"
+      final h3Match = RegExp(r'^#{2,3}\s+(.+)$').firstMatch(trimmed);
+      if (h3Match != null) {
+        widgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(top: 8, bottom: 4),
+            child: pw.Text(
+              h3Match.group(1)!,
+              style: pw.TextStyle(
+                fontSize: 12,
+                fontWeight: pw.FontWeight.bold,
+                font: font,
+              ),
+            ),
+          ),
+        );
+        i++;
+        continue;
+      }
+
+      // Regular heading: "# 文本"
+      final hMatch = RegExp(r'^#\s+(.+)$').firstMatch(trimmed);
+      if (hMatch != null) {
+        widgets.add(
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(top: 8, bottom: 4),
+            child: pw.Text(
+              hMatch.group(1)!,
+              style: pw.TextStyle(
+                fontSize: 13,
+                fontWeight: pw.FontWeight.bold,
+                font: font,
+              ),
+            ),
+          ),
+        );
+        i++;
+        continue;
+      }
+
+      // Table detection
+      if (trimmed.startsWith('|') && i + 1 < lines.length) {
+        final tableLines = <String>[trimmed];
+        i++;
+        // Collect separator line
+        if (i < lines.length && RegExp(r'^\|\s*-+:\s*(\|-)*\s*$').hasMatch(lines[i].trim())) {
+          i++;
+        }
+        // Collect remaining table rows
+        while (i < lines.length && lines[i].trim().startsWith('|')) {
+          tableLines.add(lines[i].trim());
+          i++;
+        }
+        final table = _parseMarkdownTable(tableLines);
+        if (table != null) {
+          widgets.add(_renderPdfTable(table, font));
+        }
+        continue;
+      }
+
+      // List item: "- " or "* "
+      final listMatch = RegExp(r'^[-*]\s+(.+)$').firstMatch(trimmed);
+      if (listMatch != null) {
+        widgets.add(
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text('• ', style: pw.TextStyle(fontSize: 10, font: font)),
+              Expanded(
+                child: pw.Text(
+                  _formatInlineText(listMatch.group(1)!, font),
+                  style: pw.TextStyle(fontSize: 10, font: font),
+                ),
+              ),
+            ],
+          ),
+        );
+        i++;
+        continue;
+      }
+
+      // Block quote
+      if (trimmed.startsWith('> ')) {
+        widgets.add(
+          pw.Container(
+            padding: const pw.EdgeInsets.all(8),
+            decoration: pw.BoxDecoration(
+              border: pw.Border(
+                left: pw.BorderSide(color: PdfColors.grey300, width: 3),
+              ),
+            ),
+            child: pw.Text(
+              trimmed.substring(2),
+              style: pw.TextStyle(
+                fontSize: 9,
+                font: font,
+                fontStyle: pw.FontStyle.italic,
+              ),
+            ),
+          ),
+        );
+        i++;
+        continue;
+      }
+
+      // Horizontal rule
+      if (trimmed.startsWith('---') || trimmed.startsWith('***')) {
+        widgets.add(pw.Divider(thickness: 0.5));
+        i++;
+        continue;
+      }
+
+      // Bold: **text** or __text__
+      if (trimmed.startsWith('**') || trimmed.startsWith('__')) {
+        final boldMatch = RegExp(r'\*\*(.+?)\*\*|__(.+?)__').firstMatch(trimmed);
+        if (boldMatch != null) {
+          widgets.add(
+            pw.Text(
+              _formatInlineText(trimmed, font),
+              style: pw.TextStyle(
+                fontSize: 10,
+                fontWeight: pw.FontWeight.bold,
+                font: font,
+              ),
+            ),
+          );
+        } else {
+          widgets.add(
+            pw.Text(trimmed, style: pw.TextStyle(fontSize: 10, font: font)),
+          );
+        }
+        i++;
+        continue;
+      }
+
+      // Normal paragraph
+      widgets.add(
+        pw.Text(
+          _formatInlineText(trimmed, font),
+          style: pw.TextStyle(fontSize: 10, font: font),
+        ),
+      );
+      i++;
+    }
+
+    return widgets;
+  }
+
+  static String _formatInlineText(String text, pw.Font font) {
+    // Remove trailing asterisks from list items
+    text = text.replaceAll(RegExp(r'\s+[*]+$'), '');
+    // Bold markers
+    text = text.replaceAll(RegExp(r'\*\*(.+?)\*\*'), r'$1');
+    text = text.replaceAll(RegExp(r'\*(.+?)\*'), r'$1');
+    text = text.replaceAll(RegExp(r'__(.+?)__'), r'$1');
+    return text;
+  }
+
+  static List<List<String>>? _parseMarkdownTable(List<String> lines) {
+    if (lines.length < 2) return null;
+
+    final parseRow = (String line) =>
+        line.replaceAll('^\\|', '').replaceAll('\\|\$', '').split('|')
+            .map((s) => s.trim())
+            .toList();
+
+    final headers = parseRow(lines[0]);
+    final rows = <List<String>>[];
+    for (int i = 1; i < lines.length; i++) {
+      if (RegExp(r'^\|\s*-+:\s*(\|-)*\s*$').hasMatch(lines[i].trim())) continue;
+      rows.add(parseRow(lines[i]));
+    }
+
+    return [headers, ...rows];
+  }
+
+  static pw.Widget _renderPdfTable(List<List<String>> table, pw.Font font) {
+    final maxCols = table.map((row) => row.length).reduce((a, b) => a > b ? a : b);
+    final cells = <pw.Widget>[][];
+    for (final row in table) {
+      final rowCells = <pw.Widget>[];
+      for (int c = 0; c < maxCols; c++) {
+        rowCells.add(
+          pw.Text(
+            c < row.length ? row[c] : '',
+            style: pw.TextStyle(fontSize: 8, font: font),
+          ),
+        );
+      }
+      cells.add(rowCells);
+    }
+
+    return pw.TableHelper.fromWidgetsArray(
+      headerCount: 1,
+      headerWidgets: cells[0],
+      dataWidgets: cells.sublist(1),
+      headerStyle: pw.TextStyle(
+        fontWeight: pw.FontWeight.bold,
+        fontSize: 8,
+        font: font,
+      ),
+      cellStyle: pw.TextStyle(fontSize: 8, font: font),
+      headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+      cellAlignment: pw.Alignment.centerLeft,
+    );
+  }
+
+  // ── Chart capture ────────────────────────────────────────────────
 
   static Future<List<Uint8List>> captureCharts(List<GlobalKey> keys) async {
     await WidgetsBinding.instance.endOfFrame;

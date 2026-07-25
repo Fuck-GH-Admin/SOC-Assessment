@@ -859,7 +859,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                 aiState.error == null &&
                 aiState.streamContent.isNotEmpty &&
                 aiState.sourceFingerprint == currentFingerprint
-            ? aiState.streamContent
+            ? aiState.formattedContent
             : null,
       );
 

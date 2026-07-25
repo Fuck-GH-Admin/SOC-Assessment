@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/ai_report_formatter.dart';
 import '../../data/ai_report_prompt.dart';
 import '../../data/ai_report_service.dart';
 import '../../domain/engine/soc_calculator.dart';
@@ -26,32 +27,40 @@ String buildCalculationFingerprint(
 
 class AiReportState {
   final String streamContent;
+  final String formattedContent;
   final String? reasoningContent;
   final bool isGenerating;
   final String? error;
   final String? sourceFingerprint;
+  final ReportQuality quality;
 
   const AiReportState({
     this.streamContent = '',
+    this.formattedContent = '',
     this.reasoningContent,
     this.isGenerating = false,
     this.error,
     this.sourceFingerprint,
+    this.quality = ReportQuality.empty,
   });
 
   AiReportState copyWith({
     String? streamContent,
+    String? formattedContent,
     String? reasoningContent,
     bool? isGenerating,
     String? error,
     String? sourceFingerprint,
+    ReportQuality? quality,
   }) {
     return AiReportState(
       streamContent: streamContent ?? this.streamContent,
+      formattedContent: formattedContent ?? this.formattedContent,
       reasoningContent: reasoningContent ?? this.reasoningContent,
       isGenerating: isGenerating ?? this.isGenerating,
       error: error,
       sourceFingerprint: sourceFingerprint ?? this.sourceFingerprint,
+      quality: quality ?? this.quality,
     );
   }
 }
@@ -64,7 +73,7 @@ class AiReportNotifier extends Notifier<AiReportState> {
   @override
   AiReportState build() {
     ref.onDispose(() => _cancelToken?.cancel());
-    return const AiReportState();
+    return const AiReportState(formattedContent: '');
   }
 
   Future<void> generateReport({
@@ -122,22 +131,29 @@ class AiReportNotifier extends Notifier<AiReportState> {
             chunk.reasoningContent!.isNotEmpty) {
           reasoningBuffer.write(chunk.reasoningContent);
         }
+        final raw = contentBuffer.toString();
         state = state.copyWith(
-          streamContent: contentBuffer.toString(),
+          streamContent: raw,
+          formattedContent: AiReportFormatter.format(raw),
           reasoningContent: reasoningBuffer.toString().isEmpty
               ? null
               : reasoningBuffer.toString(),
           sourceFingerprint: fingerprint,
         );
       }
+      final rawContent = contentBuffer.toString();
+      final formatted = AiReportFormatter.format(rawContent);
+      final quality = AiReportFormatter.classify(rawContent);
       if (generationId != _generationId) return;
       state = state.copyWith(
         isGenerating: false,
-        streamContent: contentBuffer.toString(),
+        streamContent: rawContent,
+        formattedContent: formatted,
         reasoningContent: reasoningBuffer.toString().isEmpty
             ? null
             : reasoningBuffer.toString(),
         sourceFingerprint: fingerprint,
+        quality: quality,
       );
     } on DioException catch (e) {
       if (generationId != _generationId) return;
@@ -172,7 +188,7 @@ class AiReportNotifier extends Notifier<AiReportState> {
     _generationId++;
     _cancelToken?.cancel();
     _cancelToken = null;
-    state = const AiReportState();
+    state = const AiReportState(formattedContent: '');
   }
 
   String _formatError(DioException e) {
