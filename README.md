@@ -2,7 +2,9 @@
 
 Flutter 跨平台土壤有机碳（SOC）评估工具，当前支持 Windows 与 Android。
 
-- 当前应用版本：**1.1.4+3**
+Linux/Ubuntu 桌面版和 `.deb` 分发列为后续规划，当前尚未纳入正式构建目标；相关依赖清单见[开发环境标准](docs/project/development-environment.md)。
+
+- 当前应用版本：**1.1.5+3**
 - 当前算法版本：**v2**
 - 当前数据库版本：**v3**
 
@@ -29,9 +31,12 @@ pH、含水量、黏粉粒和全氮当前只作为辅助观测信息，不进入
 - [业务口径与数据契约](docs/project/logic-and-data-contract.md)
 - [PDF 本地持久化](docs/project/pdf-report-storage.md)
 - [项目结构](docs/project/structure.md)
+- [开发环境标准](docs/project/development-environment.md)
 - [本轮逻辑一致性审计](docs/audit/2026-07-10-logic-consistency-audit.md)
 
 ## 快速开始
+
+Linux 主开发环境先按[开发环境标准](docs/project/development-environment.md)初始化，并在当前终端执行 `source tooling/dev-env.sh`。
 
 ```powershell
 cd soc_app
@@ -71,6 +76,7 @@ soc-assessment/
 ├── docs/
 │   ├── audit/        # 当前审计与修复记录
 │   ├── project/      # 当前业务、结构和存储文档
+│   ├── user-guide/   # 用户说明书源码、资源和发布准备
 │   └── history/      # 旧版本报告与归档文档
 ├── release/          # 本地发布产物（Git 忽略）
 ├── temp/             # 本地临时文件（Git 忽略）

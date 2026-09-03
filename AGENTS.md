@@ -38,5 +38,5 @@
 
 - Charts rendered offscreen via `Positioned(left: 5000)` inside a `Stack(clipBehavior: Clip.none)`
 - `Opacity(0)` does NOT work on Flutter 3.44.x — `toImage()` returns null
-- Font: SimHei-subset.ttf (9.7MB embedded), only used for PDF generation
+- Font: SimHei.ttf (9.3MB embedded), only used for PDF generation
 - App UI uses system fonts (Noto Sans SC / MiSans)
