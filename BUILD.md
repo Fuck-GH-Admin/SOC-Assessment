@@ -5,8 +5,8 @@
 ### 必须
 | 工具 | 版本 | 用途 |
 |------|------|------|
-| Flutter SDK | >=3.44 (已预装于 `%LOCALAPPDATA%\flutter`) | 主框架 |
-| Dart | >=3.12 | Flutter 内置 |
+| Flutter SDK | 3.44.2 | 主框架；Linux 主开发机按[开发环境标准](docs/project/development-environment.md)配置 |
+| Dart | 3.12.2 | Flutter 内置，不单独升级 |
 | Git | 任意 | 源码管理 |
 
 ### 按平台
@@ -166,8 +166,8 @@ flutter build web --release
 # soc_app/pubspec.yaml: version: x.y.z
 
 # 2. 建 tag
-git tag v1.1.4 -f
-git push origin v1.1.4 -f
+git tag v1.1.5 -f
+git push origin v1.1.5 -f
 
 # 3. 构建 APK（需英文路径）
 cp -r soc_app C:\dev\soc-app  # 复制到英文路径
@@ -186,10 +186,10 @@ Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath soc-a
 git archive -o soc-app-source-<version>.zip HEAD
 
 # 6. 创建 Release（GitHub CLI）
-gh release create v1.1.4 --title "v1.1.4" --notes "变更说明..."
-gh release upload v1.1.4 soc-app-android-<version>.apk
-gh release upload v1.1.4 soc-app-windows-<version>.zip
-gh release upload v1.1.4 soc-app-source-<version>.zip
+gh release create v1.1.5 --title "v1.1.5" --notes "变更说明..."
+gh release upload v1.1.5 soc-app-android-<version>.apk
+gh release upload v1.1.5 soc-app-windows-<version>.zip
+gh release upload v1.1.5 soc-app-source-<version>.zip
 ```
 
 ## 版本号管理
@@ -197,7 +197,7 @@ gh release upload v1.1.4 soc-app-source-<version>.zip
 版本号在 `soc_app/pubspec.yaml` 中定义：
 
 ```yaml
-version: 1.1.4+3   # 语义版本+构建号
+version: 1.1.5+3   # 语义版本+构建号
 ```
 
 - `1.1.0` — 语义版本（major.minor.patch）

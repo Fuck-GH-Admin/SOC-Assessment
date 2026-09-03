@@ -17,6 +17,7 @@ soc-assessment/
 ├── docs/
 │   ├── audit/               # 审计、修复计划、验证记录
 │   ├── project/             # 项目结构与维护说明
+│   ├── user-guide/          # 用户说明书源码、资源和发布准备
 │   ├── history/             # 历史报告
 │   └── superpowers/specs/   # 迁移设计资料
 ├── release/                 # 本地发布产物，仅本地保留，不提交
@@ -54,6 +55,7 @@ PDF 的保存、关联、删除和失效路径清理规则见
 
 ## 后续建议
 
+- 用户说明书统一维护在 `docs/user-guide/`，Markdown 为唯一源文件，HTML/PDF 为渲染产物。
 - 将顶层长期文档逐步归档进 `docs/project/`，顶层只保留 `README.md`、`BUILD.md`、`LICENSE` 等入口文档。
 - 发布包继续使用 `git archive` 生成源码包，避免把 `release/`、`temp/`、`.git/` 打进源码包。
 - 若要彻底瘦身仓库历史，需要单独做 Git 历史清理，本轮不执行破坏性历史重写。

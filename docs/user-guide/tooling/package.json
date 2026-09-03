@@ -1,0 +1,8 @@
+{
+  "name": "soc-shield-user-guide-tooling",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "markdown-it": "14.1.0"
+  }
+}

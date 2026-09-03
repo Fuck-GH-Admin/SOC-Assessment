@@ -770,9 +770,9 @@ class _HomePageState extends ConsumerState<HomePage> {
       if (restore == true && mounted) {
         ref.read(calculatorProvider.notifier).loadDraft(draft);
         _syncCtrlsFromParams(draft);
-      } else if (restore == false) {
-        await dao.delete();
       }
+      // “忽略”按用户手册口径保留草稿：草稿仅在恢复、成功计算、
+      // 手动重置或超过 7 天后被清理，因此关闭提示时不删除。
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(

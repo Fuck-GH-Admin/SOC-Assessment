@@ -40,10 +40,14 @@ soc_app/.packages
 soc_app/build/
 soc_app/.flutter-plugins
 soc_app/.flutter-plugins-dependencies
+
+# Local, reproducible development toolchain (installed by tooling/setup-dev-environment.sh)
+.tools/
 soc_app/coverage/
 soc_app/ios/Pods/
 soc_app/ios/.symlinks/
 soc_app/android/.gradle/
 soc_app/android/app/build/
+soc_app/android/build/
 soc_app/android/local.properties
 soc_app/.flutter-plugins-dependencies
