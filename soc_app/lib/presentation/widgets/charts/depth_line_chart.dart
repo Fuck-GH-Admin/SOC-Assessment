@@ -12,16 +12,9 @@ class DepthLineChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final depths = [0, 1, 2, 3, 4];
-    final depthsMap = {10: 0, 25: 1, 35: 2, 45: 3, 55: 4};
-
-    final socValues = depths.map((i) {
-      for (final e in depthsMap.entries) {
-        final v = calculateSOCValue(fert, erosion, e.key);
-        if (e.value == i) return v;
-      }
-      return 0.0;
-    }).toList();
+    final socValues = kSoilDepthDefinitions
+        .map((layer) => calculateSOCValue(fert, erosion, layer.key))
+        .toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
