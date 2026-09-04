@@ -42,11 +42,15 @@ class HomePage extends ConsumerStatefulWidget {
 class _HomePageState extends ConsumerState<HomePage> {
   static const _maxDraftAge = Duration(days: 7);
 
+  /// 宽屏断点：≥ 此宽度使用桌面双栏 + NavigationRail 布局。
+  static const double _wideBreakpoint = 900;
+
   late final Map<String, TextEditingController> _ctrls;
   final PdfReportStorage _pdfReportStorage = PdfReportStorage();
   bool _pdfExporting = false;
   int _tabIndex = 0;
   int _chartTabIndex = 0;
+  bool _railExtended = false;
 
   /// Keys for the visible chart carousel (used for on-screen display).
   final _chartKeys = List.generate(8, (_) => GlobalKey());
@@ -120,102 +124,163 @@ class _HomePageState extends ConsumerState<HomePage> {
       }
     });
 
+    final calcActions = [
+      if (state.isCalculated)
+        IconButton(
+          icon: _pdfExporting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.picture_as_pdf),
+          tooltip: '导出 PDF',
+          onPressed: _pdfExporting ? null : () => _exportPdf(),
+        ),
+      IconButton(
+        icon: const Icon(Icons.history),
+        tooltip: '历史记录',
+        onPressed: _pdfExporting
+            ? null
+            : () async {
+                final params = await Navigator.push<CalculationParams>(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HistoryPage()),
+                );
+                if (params == null || !mounted) return;
+                ref.read(calculatorProvider.notifier).loadParams(params);
+                _syncCtrlsFromParams(params);
+                setState(() => _tabIndex = 0);
+              },
+      ),
+      IconButton(
+        icon: const Icon(Icons.settings),
+        tooltip: '设置',
+        onPressed: _pdfExporting
+            ? null
+            : () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsPage()),
+              ),
+      ),
+    ];
+
+    final body = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IndexedStack(
+          index: _tabIndex,
+          children: [
+            _buildCalcTab(state, theme),
+            _buildChartTab(state, theme),
+            const ResiliencePage(),
+          ],
+        ),
+        if (state.isCalculated && _pdfExporting)
+          Positioned(
+            left: 5000,
+            top: 0,
+            child: IgnorePointer(
+              child: Theme(
+                data: AppTheme.lightTheme(seedColor),
+                child: _buildPdfChartWidgets(state),
+              ),
+            ),
+          ),
+      ],
+    );
+
+    final calculateButton = FloatingActionButton.extended(
+      onPressed: state.isCalculating || _pdfExporting
+          ? null
+          : () => ref.read(calculatorProvider.notifier).calculate(),
+      icon: state.isCalculating
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.calculate),
+      label: Text(state.isCalculating ? '计算中' : '计算'),
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('SOC 土壤碳评估'),
-        actions: [
-          if (state.isCalculated)
-            IconButton(
-              icon: _pdfExporting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.picture_as_pdf),
-              tooltip: '导出 PDF',
-              onPressed: _pdfExporting ? null : () => _exportPdf(),
-            ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: '历史记录',
-            onPressed: _pdfExporting
-                ? null
-                : () async {
-                    final params = await Navigator.push<CalculationParams>(
-                      context,
-                      MaterialPageRoute(builder: (_) => const HistoryPage()),
-                    );
-                    if (params == null || !mounted) return;
-                    ref.read(calculatorProvider.notifier).loadParams(params);
-                    _syncCtrlsFromParams(params);
-                    setState(() => _tabIndex = 0);
-                  },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: '设置',
-            onPressed: _pdfExporting
-                ? null
-                : () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SettingsPage()),
-                  ),
-          ),
-        ],
+        actions: calcActions,
       ),
-      // Render 8 chart offscreen (x=5000) so they are always painted
-      // and toImage() works.  Stack is Clip.none so offscreen content is
-      // not clipped.  IgnorePointer prevents accidental taps on the
-      // invisible offscreen region.
-      body: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          IndexedStack(
-            index: _tabIndex,
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          final wide = constraints.maxWidth >= _wideBreakpoint;
+          if (!wide) {
+            // Android / 窄窗口：底部导航 + 单列，浮动按钮承担计算动作。
+            return Stack(
+              clipBehavior: Clip.none,
+              children: [
+                body,
+                Positioned(
+                  right: 16,
+                  bottom: 24,
+                  child: calculateButton,
+                ),
+              ],
+            );
+          }
+          // PC / Linux 宽屏：左侧 NavigationRail + 右侧内容双栏。
+          return Row(
             children: [
-              _buildCalcTab(state, theme),
-              _buildChartTab(state, theme),
-              const ResiliencePage(),
-            ],
-          ),
-          if (state.isCalculated && _pdfExporting)
-            Positioned(
-              left: 5000,
-              top: 0,
-              child: IgnorePointer(
-                child: Theme(
-                  data: AppTheme.lightTheme(seedColor),
-                  child: _buildPdfChartWidgets(state),
+              ScrollConfiguration(
+                behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+                child: NavigationRail(
+                  selectedIndex: _tabIndex,
+                  onDestinationSelected: (i) =>
+                      setState(() => _tabIndex = i),
+                  extended: _railExtended,
+                  minExtendedWidth: 190,
+                  leading: Padding(
+                    padding: const EdgeInsets.only(top: 8, bottom: 12),
+                    child: IconButton(
+                      icon: Icon(
+                        _railExtended
+                            ? Icons.menu_open
+                            : Icons.menu,
+                      ),
+                      tooltip: _railExtended ? '收起导航' : '展开导航',
+                      onPressed: () =>
+                          setState(() => _railExtended = !_railExtended),
+                    ),
+                  ),
+                  trailing: Expanded(
+                    child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: calculateButton,
+                      ),
+                    ),
+                  ),
+                  destinations: const [
+                    NavigationRailDestination(
+                      icon: Icon(Icons.calculate),
+                      label: Text('计算'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.bar_chart),
+                      label: Text('图表'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.restore),
+                      label: Text('恢复力'),
+                    ),
+                  ],
                 ),
               ),
-            ),
-        ],
+              const VerticalDivider(width: 1),
+              Expanded(child: body),
+            ],
+          );
+        },
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tabIndex,
-        onDestinationSelected: (i) => setState(() => _tabIndex = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.calculate), label: '计算'),
-          NavigationDestination(icon: Icon(Icons.bar_chart), label: '图表'),
-          NavigationDestination(icon: Icon(Icons.restore), label: '恢复力'),
-        ],
-      ),
-      floatingActionButton: _tabIndex == 0
-          ? FloatingActionButton.extended(
-              onPressed: state.isCalculating || _pdfExporting
-                  ? null
-                  : () => ref.read(calculatorProvider.notifier).calculate(),
-              icon: state.isCalculating
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.calculate),
-              label: Text(state.isCalculating ? '计算中' : '计算'),
-            )
-          : null,
     );
   }
 
