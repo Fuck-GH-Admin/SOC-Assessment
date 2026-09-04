@@ -27,6 +27,7 @@ import 'package:soc_app/presentation/widgets/charts/heatmap_chart.dart';
 import 'package:soc_app/presentation/widgets/charts/pool_pie_chart.dart';
 import 'package:soc_app/presentation/widgets/charts/straw_scenario_chart.dart';
 import 'package:soc_app/presentation/pages/history/history_page.dart';
+import 'package:soc_app/presentation/pages/resilience/resilience_page.dart';
 import 'package:soc_app/presentation/pages/settings/settings_page.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -175,6 +176,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             children: [
               _buildCalcTab(state, theme),
               _buildChartTab(state, theme),
+              const ResiliencePage(),
             ],
           ),
           if (state.isCalculated && _pdfExporting)
@@ -196,6 +198,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.calculate), label: '计算'),
           NavigationDestination(icon: Icon(Icons.bar_chart), label: '图表'),
+          NavigationDestination(icon: Icon(Icons.restore), label: '恢复力'),
         ],
       ),
       floatingActionButton: _tabIndex == 0
