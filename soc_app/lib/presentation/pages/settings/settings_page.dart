@@ -415,7 +415,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.info_outline),
-                          title: const Text('SOC 土壤碳评估'),
+                          title: const Text('碳盾 · SOC-Shield'),
                           subtitle: Text('v$_kVersion'),
                         ),
                         ListTile(
