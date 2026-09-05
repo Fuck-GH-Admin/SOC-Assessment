@@ -74,6 +74,12 @@ flutter:
 
   assets:
     - assets/fonts/SimHei.ttf
+    - assets/manual/quick-start.md
+    - assets/manual/user-guide.md
+    - assets/manual/scientific-basis.md
+    - assets/manual/faq.md
+    - assets/manual/glossary.md
+    - assets/manual/changelog.md
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

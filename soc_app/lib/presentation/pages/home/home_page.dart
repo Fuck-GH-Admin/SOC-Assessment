@@ -321,90 +321,63 @@ class _HomePageState extends ConsumerState<HomePage> {
   // All 8 charts rendered in a Column at a fixed 600 × 300 size each.
   // These are wrapped in RepaintBoundary with _pdfChartKeys so that
   // PdfExporter.captureCharts() can call toImage() on each.
+  //
+  // PDF 截图必须浅色：外层 Theme(light) 负责文字/轴/图例配色，
+  // 每个 chartBox 自带白底（多数图表无自身背景，透明像素在 PDF
+  // 中会按深色合成，这是深色模式下导出发黑的根因）。
   Widget _buildPdfChartWidgets(CalculatorState state) {
     const w = 600.0;
     const h = 300.0;
+    Widget chartBox(int index, Widget chart) {
+      return RepaintBoundary(
+        key: _pdfChartKeys[index],
+        child: Container(
+          width: w,
+          height: h,
+          color: Colors.white,
+          padding: const EdgeInsets.all(8),
+          child: chart,
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RepaintBoundary(
-          key: _pdfChartKeys[0],
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: ErosionBarChart(fert: state.params.fert),
+        chartBox(0, ErosionBarChart(fert: state.params.fert)),
+        chartBox(
+          1,
+          DepthLineChart(
+            fert: state.params.fert,
+            erosion: state.params.erosion,
           ),
         ),
-        RepaintBoundary(
-          key: _pdfChartKeys[1],
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: DepthLineChart(
-              fert: state.params.fert,
-              erosion: state.params.erosion,
-            ),
+        chartBox(
+          2,
+          StrawScenarioChart(
+            cropBiomass: state.params.cropBiomass,
+            strawCarbonRatio: state.params.strawCarbonRatio,
+            litterCarbonInput: state.params.litterCarbonInput,
           ),
         ),
-        RepaintBoundary(
-          key: _pdfChartKeys[2],
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: StrawScenarioChart(
-              cropBiomass: state.params.cropBiomass,
-              strawCarbonRatio: state.params.strawCarbonRatio,
-              litterCarbonInput: state.params.litterCarbonInput,
-            ),
+        chartBox(3, AssessmentRadarChart(result: state.result!)),
+        chartBox(
+          4,
+          PoolPieChart(
+            fert: state.params.fert,
+            erosion: state.params.erosion,
+            bd: state.params.bd,
           ),
         ),
-        RepaintBoundary(
-          key: _pdfChartKeys[3],
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: AssessmentRadarChart(result: state.result!),
+        chartBox(5, CorrelationScatterChart(fert: state.params.fert)),
+        chartBox(
+          6,
+          ComparisonFillChart(
+            fert: state.params.fert,
+            erosion: state.params.erosion,
           ),
         ),
-        RepaintBoundary(
-          key: _pdfChartKeys[4],
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: PoolPieChart(
-              fert: state.params.fert,
-              erosion: state.params.erosion,
-              bd: state.params.bd,
-            ),
-          ),
-        ),
-        RepaintBoundary(
-          key: _pdfChartKeys[5],
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: CorrelationScatterChart(fert: state.params.fert),
-          ),
-        ),
-        RepaintBoundary(
-          key: _pdfChartKeys[6],
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: ComparisonFillChart(
-              fert: state.params.fert,
-              erosion: state.params.erosion,
-            ),
-          ),
-        ),
-        RepaintBoundary(
-          key: _pdfChartKeys[7],
-          child: SizedBox(
-            width: w,
-            height: h,
-            child: HeatmapChart(fert: state.params.fert),
-          ),
-        ),
+        chartBox(7, HeatmapChart(fert: state.params.fert)),
       ],
     );
   }
