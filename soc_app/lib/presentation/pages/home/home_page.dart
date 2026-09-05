@@ -25,6 +25,7 @@ import 'package:soc_app/presentation/widgets/charts/pool_pie_chart.dart';
 import 'package:soc_app/presentation/widgets/charts/straw_scenario_chart.dart';
 import 'package:soc_app/presentation/models/assessment_phase.dart';
 import 'package:soc_app/presentation/pages/history/history_page.dart';
+import 'package:soc_app/presentation/pages/report/report_page.dart';
 import 'package:soc_app/presentation/pages/resilience/resilience_page.dart';
 import 'package:soc_app/presentation/pages/settings/settings_page.dart';
 import 'package:soc_app/presentation/widgets/chart_story_card.dart';
@@ -179,6 +180,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             _buildCalcTab(state, theme),
             _buildChartTab(state, theme),
             const ResiliencePage(),
+            const ReportPage(),
           ],
         ),
         if (state.isCalculated &&
@@ -216,11 +218,32 @@ class _HomePageState extends ConsumerState<HomePage> {
         title: const Text('SOC 土壤碳评估'),
         actions: calcActions,
       ),
+      bottomNavigationBar: LayoutBuilder(
+        builder: (context, constraints) {
+          // 窄屏显示底栏；宽屏由 body 内的 NavigationRail 承担导航，
+          // 这里返回占位高度避免 AppBar 下内容被裁切。
+          final wide = constraints.maxWidth >= _wideBreakpoint;
+          if (wide) return const SizedBox.shrink();
+          return NavigationBar(
+            selectedIndex: _tabIndex,
+            onDestinationSelected: (i) => setState(() => _tabIndex = i),
+            destinations: const [
+              NavigationDestination(icon: Icon(Icons.calculate), label: '计算'),
+              NavigationDestination(icon: Icon(Icons.bar_chart), label: '图表'),
+              NavigationDestination(icon: Icon(Icons.restore), label: '恢复力'),
+              NavigationDestination(
+                icon: Icon(Icons.description_outlined),
+                label: '报告',
+              ),
+            ],
+          );
+        },
+      ),
       body: LayoutBuilder(
         builder: (context, constraints) {
           final wide = constraints.maxWidth >= _wideBreakpoint;
           if (!wide) {
-            // Android / 窄窗口：底部导航 + 单列，浮动按钮承担计算动作。
+            // Android / 窄窗口：底栏导航 + 单列，浮动按钮承担计算动作。
             return Stack(
               clipBehavior: Clip.none,
               children: [
@@ -278,6 +301,10 @@ class _HomePageState extends ConsumerState<HomePage> {
                     NavigationRailDestination(
                       icon: Icon(Icons.restore),
                       label: Text('恢复力'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.description_outlined),
+                      label: Text('报告'),
                     ),
                   ],
                 ),
