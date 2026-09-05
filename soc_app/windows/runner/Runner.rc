@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "SOC-Shield" "\0"
-            VALUE "FileDescription", "SOC-Shield" "\0"
+            VALUE "FileDescription", "碳盾 · SOC-Shield — 土壤有机碳评估系统" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "SOC-Shield" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 SOC-Shield. All rights reserved." "\0"
             VALUE "OriginalFilename", "SOC-Shield.exe" "\0"
-            VALUE "ProductName", "SOC-Shield" "\0"
+            VALUE "ProductName", "碳盾 · SOC-Shield" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

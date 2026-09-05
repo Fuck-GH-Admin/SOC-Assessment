@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:soc_app/core/theme/theme_provider.dart';
 import 'package:soc_app/data/ai_config_service.dart';
+import 'package:soc_app/presentation/pages/settings/manual_viewer_page.dart';
 import 'package:soc_app/presentation/providers/ai_config_provider.dart';
 
 final _kVersion = '1.1.5 (build 3)';
@@ -156,6 +157,18 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _openManual(String title, String fileName) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ManualViewerPage(
+          title: title,
+          assetPath: 'assets/manual/$fileName',
+        ),
+      ),
+    );
   }
 
   @override
@@ -408,6 +421,58 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
+                          '帮助',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 8),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.rocket_launch_outlined),
+                          title: const Text('快速入门'),
+                          subtitle: const Text('用一次完整流程完成第一次评估'),
+                          onTap: () => _openManual('快速入门', 'quick-start.md'),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.menu_book_outlined),
+                          title: const Text('完整用户指南'),
+                          subtitle: const Text('页面、参数、结果、历史与故障处理'),
+                          onTap: () => _openManual('完整用户指南', 'user-guide.md'),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.science_outlined),
+                          title: const Text('科学口径与附录'),
+                          subtitle: const Text('数据来源、公式、单位、版本和限制'),
+                          onTap: () =>
+                              _openManual('科学口径与附录', 'scientific-basis.md'),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.help_outline),
+                          title: const Text('常见问题'),
+                          subtitle: const Text('操作和结果解释中的高频问题'),
+                          onTap: () => _openManual('常见问题', 'faq.md'),
+                        ),
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.translate),
+                          title: const Text('术语表'),
+                          subtitle: const Text('SOC、CK、碳库等专业词汇'),
+                          onTap: () => _openManual('术语表', 'glossary.md'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
                           '关于',
                           style: Theme.of(context).textTheme.titleLarge,
                         ),
@@ -415,7 +480,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         ListTile(
                           contentPadding: EdgeInsets.zero,
                           leading: const Icon(Icons.info_outline),
-                          title: const Text('SOC 土壤碳评估'),
+                          title: const Text('碳盾 · SOC-Shield'),
                           subtitle: Text('v$_kVersion'),
                         ),
                         ListTile(
