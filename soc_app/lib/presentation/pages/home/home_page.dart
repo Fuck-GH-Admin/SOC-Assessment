@@ -7,17 +7,14 @@ import 'package:path/path.dart' as p;
 import 'package:soc_app/core/theme/app_theme.dart';
 import 'package:soc_app/core/theme/theme_provider.dart';
 import 'package:soc_app/data/pdf_exporter.dart';
-import 'package:soc_app/data/ai_report_prompt.dart';
 import 'package:soc_app/data/pdf_report_storage.dart';
+import 'package:soc_app/domain/engine/chart_narrative.dart';
 import 'package:soc_app/domain/models/calculation_params.dart';
-import 'package:soc_app/domain/models/calculation_result.dart';
-import 'package:soc_app/presentation/providers/ai_config_provider.dart';
 import 'package:soc_app/presentation/providers/ai_report_provider.dart';
 import 'package:soc_app/presentation/providers/calculator_provider.dart';
 import 'package:soc_app/presentation/providers/draft_dao_provider.dart';
 import 'package:soc_app/presentation/providers/history_provider.dart';
 import 'package:soc_app/presentation/providers/record_dao_provider.dart';
-import 'package:soc_app/presentation/widgets/ai_report_card.dart';
 import 'package:soc_app/presentation/widgets/charts/assessment_radar_chart.dart';
 import 'package:soc_app/presentation/widgets/charts/comparison_fill_chart.dart';
 import 'package:soc_app/presentation/widgets/charts/correlation_scatter_chart.dart';
@@ -30,6 +27,7 @@ import 'package:soc_app/presentation/models/assessment_phase.dart';
 import 'package:soc_app/presentation/pages/history/history_page.dart';
 import 'package:soc_app/presentation/pages/resilience/resilience_page.dart';
 import 'package:soc_app/presentation/pages/settings/settings_page.dart';
+import 'package:soc_app/presentation/widgets/chart_story_card.dart';
 import 'package:soc_app/presentation/widgets/phase_banner.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
@@ -51,7 +49,6 @@ class _HomePageState extends ConsumerState<HomePage> {
   final PdfReportStorage _pdfReportStorage = PdfReportStorage();
   bool _pdfExporting = false;
   int _tabIndex = 0;
-  int _chartTabIndex = 0;
   bool _railExtended = false;
 
   /// Keys for the visible chart carousel (used for on-screen display).
@@ -795,7 +792,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Widget _buildChartTab(CalculatorState state, ThemeData theme) {
-    if (!state.isCalculated) {
+    if (!state.isCalculated || state.result == null) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -808,82 +805,196 @@ class _HomePageState extends ConsumerState<HomePage> {
       );
     }
 
-    final aiState = ref.watch(aiReportProvider);
+    // 叙事化分组（方案 §5）：概览 / 剖面与侵蚀 / 管理情景 / 高级分析，
+    // 每张图先给由当次数据推导的一句话结论，再呈现图形。
+    final sections = _buildStorySections(state, theme);
+    Widget sectionBody(int index) => ListView(
+          padding: const EdgeInsets.all(16),
+          children: sections[index],
+        );
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('图表分析', style: theme.textTheme.titleLarge),
-                const SizedBox(height: 16),
-                _ChartCarousel(
-                  chartKeys: _chartKeys,
-                  tabIndex: _chartTabIndex,
-                  onTabChanged: (i) => setState(() => _chartTabIndex = i),
-                  fert: state.params.fert,
-                  erosion: state.params.erosion,
-                  depth: state.params.depth,
-                  bd: state.params.bd,
-                  cropBiomass: state.params.cropBiomass,
-                  strawCarbonRatio: state.params.strawCarbonRatio,
-                  litterCarbonInput: state.params.litterCarbonInput,
-                  result: state.result!,
-                ),
+    return DefaultTabController(
+      length: _storySectionTitles.length,
+      child: Column(
+        children: [
+          Material(
+            color: theme.colorScheme.surface,
+            child: TabBar(
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
+              tabs: [
+                for (final t in _storySectionTitles) Tab(text: t.$1),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Expanded(
+            child: TabBarView(
               children: [
-                Text('AI 评估报告', style: theme.textTheme.titleLarge),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    FilledButton.icon(
-                      onPressed: aiState.isGenerating
-                          ? null
-                          : () => _generateReport(),
-                      icon: const Icon(Icons.auto_awesome, size: 18),
-                      label: const Text('生成报告'),
-                    ),
-                    if (aiState.isGenerating) ...[
-                      const SizedBox(width: 8),
-                      OutlinedButton(
-                        onPressed: () =>
-                            ref.read(aiReportProvider.notifier).cancel(),
-                        child: const Text('取消'),
-                      ),
-                    ],
-                    if (aiState.streamContent.isNotEmpty &&
-                        !aiState.isGenerating) ...[
-                      const SizedBox(width: 8),
-                      TextButton.icon(
-                        onPressed: () =>
-                            ref.read(aiReportProvider.notifier).reset(),
-                        icon: const Icon(Icons.refresh, size: 16),
-                        label: const Text('重新生成'),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 8),
-                const AiReportCard(),
+                for (var i = 0; i < sections.length; i++)
+                  KeyedSubtree(
+                    key: ValueKey('story-section-$i'),
+                    child: sectionBody(i),
+                  ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static const List<(String, String)> _storySectionTitles = [
+    ('概览', '当前评估的关键数字与相对位置'),
+    ('剖面与侵蚀', '垂直分布、CK 对照与侵蚀梯度'),
+    ('管理情景', '秸秆还田碳输入核算'),
+    ('高级分析', '归一化展示与数据分布辅助视图'),
+  ];
+
+  /// 四个叙事分区的图表故事卡。每个 ChartStoryCard 的问题/结论均来自
+  /// ChartNarrative 对当次计算数据的推导；RepaintBoundary key 与
+  /// PDF 截图层（_pdfChartKeys）一一对应，导出不受布局重构影响。
+  List<List<Widget>> _buildStorySections(
+    CalculatorState state,
+    ThemeData theme,
+  ) {
+    final fert = state.params.fert;
+    final erosion = state.params.erosion;
+    final bd = state.params.bd;
+    final result = state.result!;
+
+    Widget story({
+      required GlobalKey key,
+      required String title,
+      required String question,
+      required String insight,
+      required Widget chart,
+      String? caveat,
+    }) {
+      return RepaintBoundary(
+        key: key,
+        child: ChartStoryCard(
+          title: title,
+          question: question,
+          insight: insight,
+          caveat: caveat,
+          chart: chart,
+        ),
+      );
+    }
+
+    return [
+      // ── 概览 ──
+      [
+        story(
+          key: _chartKeys[3],
+          title: '评估雷达',
+          question: '当前评估各指标处于什么相对位置？',
+          insight: ChartNarrative.assessmentRadar(result),
+          chart: SizedBox(
+            height: 280,
+            child: AssessmentRadarChart(result: result),
+          ),
+          caveat: '五边形由固定区间归一化生成，仅用于同屏观察。',
+        ),
+        story(
+          key: _chartKeys[4],
+          title: '剖面碳库组成',
+          question: '0-60cm 碳库由哪些土层贡献？',
+          insight: ChartNarrative.poolComposition(
+            fert: fert,
+            erosion: erosion,
+            bd: bd,
+          ),
+          chart: SizedBox(height: 240, child: PoolPieChart(
+            fert: fert,
+            erosion: erosion,
+            bd: bd,
+          )),
+        ),
+      ],
+      // ── 剖面与侵蚀 ──
+      [
+        story(
+          key: _chartKeys[1],
+          title: 'SOC 垂直分布',
+          question: '当前处理与 CK 的剖面形态差在哪一层？',
+          insight: ChartNarrative.depthProfile(
+            fert: fert,
+            erosion: erosion,
+            bd: bd,
+          ),
+          chart: SizedBox(
+            height: 280,
+            child: DepthLineChart(fert: fert, erosion: erosion),
+          ),
+        ),
+        story(
+          key: _chartKeys[6],
+          title: '当前 vs CK 分层对照',
+          question: '同一条剖面，侵蚀处理与 CK 差多少？',
+          insight: ChartNarrative.comparisonFill(
+            fert: fert,
+            erosion: erosion,
+          ),
+          chart: SizedBox(
+            height: 280,
+            child: ComparisonFillChart(fert: fert, erosion: erosion),
+          ),
+          caveat: '图中为浓度直接累加，正式碳库结论以容重换算为准。',
+        ),
+        story(
+          key: _chartKeys[0],
+          title: '侵蚀梯度',
+          question: '侵蚀越深，表层碳损失越多么？',
+          insight: ChartNarrative.erosionCurve(
+            fert: fert,
+            currentErosion: erosion,
+          ),
+          chart: SizedBox(
+            height: 280,
+            child: ErosionBarChart(fert: fert),
           ),
         ),
       ],
-    );
+      // ── 管理情景 ──
+      [
+        story(
+          key: _chartKeys[2],
+          title: '秸秆还田碳输入核算',
+          question: '提高还田比例能带来多少碳输入增量？',
+          insight: ChartNarrative.strawScenario(state.resilience),
+          chart: SizedBox(
+            height: 260,
+            child: StrawScenarioChart(
+              cropBiomass: state.params.cropBiomass,
+              strawCarbonRatio: state.params.strawCarbonRatio,
+              litterCarbonInput: state.params.litterCarbonInput,
+            ),
+          ),
+          caveat: '情景为管理投入估算，不代表 SOC 将等量增加。',
+        ),
+      ],
+      // ── 高级分析 ──
+      [
+        story(
+          key: _chartKeys[7],
+          title: '侵蚀 × 土层热力矩阵',
+          question: '整个数据矩阵的高低点在哪里？',
+          insight: ChartNarrative.heatmap(fert: fert),
+          chart: SizedBox(height: 240, child: HeatmapChart(fert: fert)),
+        ),
+        story(
+          key: _chartKeys[5],
+          title: '侵蚀-SOC 分布',
+          question: '侵蚀等级与表层 SOC 的分布方向一致吗？',
+          insight: ChartNarrative.correlation(fert: fert),
+          chart: SizedBox(
+            height: 280,
+            child: CorrelationScatterChart(fert: fert),
+          ),
+        ),
+      ],
+    ];
   }
 
   Future<void> _checkDraft() async {
@@ -925,52 +1036,6 @@ class _HomePageState extends ConsumerState<HomePage> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('草稿读取失败：$e')));
-    }
-  }
-
-  Future<void> _generateReport() async {
-    try {
-      final service = ref.read(aiConfigProvider);
-      var preset = await service.readPreset();
-      var apiKey = await service.readApiKey();
-      if (preset.apiKeyRequired && (apiKey == null || apiKey.isEmpty)) {
-        if (!mounted) return;
-        final configured = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(builder: (_) => const SettingsPage()),
-        );
-        if (configured != true || !mounted) return;
-        preset = await service.readPreset();
-        apiKey = await service.readApiKey();
-      }
-      if (preset.apiKeyRequired && (apiKey == null || apiKey.isEmpty)) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('未检测到 API Key，请先完成配置')));
-        return;
-      }
-      if (!mounted) return;
-      final baseUrl = await service.readBaseUrl();
-      final model = await service.readModel();
-      final enableThinking = await service.readEnableThinking();
-      final reasoningEffort = await service.readReasoningEffort();
-      ref
-          .read(aiReportProvider.notifier)
-          .generateReport(
-            baseUrl: baseUrl,
-            apiKey: apiKey ?? '',
-            model: model,
-            systemPrompt: systemPrompt,
-            enableThinking: enableThinking,
-            reasoningEffort: reasoningEffort,
-            extraThinkingBody: enableThinking ? preset.extraBody : null,
-          );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('AI 配置读取失败：$e')));
     }
   }
 
@@ -1135,163 +1200,6 @@ class _HomePageState extends ConsumerState<HomePage> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ChartCarousel extends StatefulWidget {
-  final List<GlobalKey> chartKeys;
-  final int tabIndex;
-  final ValueChanged<int> onTabChanged;
-  final String fert;
-  final int erosion;
-  final int depth;
-  final double bd;
-  final double cropBiomass;
-  final double strawCarbonRatio;
-  final double litterCarbonInput;
-  final CalculationResult result;
-
-  const _ChartCarousel({
-    required this.chartKeys,
-    required this.tabIndex,
-    required this.onTabChanged,
-    required this.fert,
-    required this.erosion,
-    required this.depth,
-    required this.bd,
-    required this.cropBiomass,
-    required this.strawCarbonRatio,
-    required this.litterCarbonInput,
-    required this.result,
-  });
-
-  @override
-  State<_ChartCarousel> createState() => _ChartCarouselState();
-}
-
-class _ChartCarouselState extends State<_ChartCarousel>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  bool _tabSyncing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(
-      length: 8,
-      vsync: this,
-      initialIndex: widget.tabIndex,
-    );
-    _tabController.addListener(() {
-      if (!_tabSyncing && !_tabController.indexIsChanging) {
-        widget.onTabChanged(_tabController.index);
-      }
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  @override
-  void didUpdateWidget(covariant _ChartCarousel oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.tabIndex != _tabController.index) {
-      _tabSyncing = true;
-      _tabController.index = widget.tabIndex;
-      _tabSyncing = false;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final charts = <Widget>[
-      RepaintBoundary(
-        key: widget.chartKeys[0],
-        child: SingleChildScrollView(child: ErosionBarChart(fert: widget.fert)),
-      ),
-      RepaintBoundary(
-        key: widget.chartKeys[1],
-        child: SingleChildScrollView(
-          child: DepthLineChart(fert: widget.fert, erosion: widget.erosion),
-        ),
-      ),
-      RepaintBoundary(
-        key: widget.chartKeys[2],
-        child: SingleChildScrollView(
-          child: StrawScenarioChart(
-            cropBiomass: widget.cropBiomass,
-            strawCarbonRatio: widget.strawCarbonRatio,
-            litterCarbonInput: widget.litterCarbonInput,
-          ),
-        ),
-      ),
-      RepaintBoundary(
-        key: widget.chartKeys[3],
-        child: SingleChildScrollView(
-          child: AssessmentRadarChart(result: widget.result),
-        ),
-      ),
-      RepaintBoundary(
-        key: widget.chartKeys[4],
-        child: SingleChildScrollView(
-          child: PoolPieChart(
-            fert: widget.fert,
-            erosion: widget.erosion,
-            bd: widget.bd,
-          ),
-        ),
-      ),
-      RepaintBoundary(
-        key: widget.chartKeys[5],
-        child: SingleChildScrollView(
-          child: CorrelationScatterChart(fert: widget.fert),
-        ),
-      ),
-      RepaintBoundary(
-        key: widget.chartKeys[6],
-        child: SingleChildScrollView(
-          child: ComparisonFillChart(
-            fert: widget.fert,
-            erosion: widget.erosion,
-          ),
-        ),
-      ),
-      RepaintBoundary(
-        key: widget.chartKeys[7],
-        child: SingleChildScrollView(child: HeatmapChart(fert: widget.fert)),
-      ),
-    ];
-
-    return Column(
-      children: [
-        SizedBox(
-          height: 36,
-          child: TabBar(
-            controller: _tabController,
-            isScrollable: true,
-            tabAlignment: TabAlignment.start,
-            labelStyle: const TextStyle(fontSize: 11),
-            tabs: const [
-              Tab(text: '侵蚀'),
-              Tab(text: '深度'),
-              Tab(text: '秸秆'),
-              Tab(text: '评估'),
-              Tab(text: '组成'),
-              Tab(text: '关联'),
-              Tab(text: '对比'),
-              Tab(text: '热力'),
-            ],
-          ),
-        ),
-        SizedBox(
-          height: 280,
-          child: IndexedStack(index: widget.tabIndex, children: charts),
-        ),
-      ],
     );
   }
 }
