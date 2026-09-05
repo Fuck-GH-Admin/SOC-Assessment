@@ -56,6 +56,12 @@ jobs:
         run: |
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup -y }
+          # Inno 6.3+ 默认语言包不含简中，补官方镜像的 ChineseSimplified.isl
+          $lang = "C:\Program Files (x86)\Inno Setup 6\Languages\ChineseSimplified.isl"
+          if (-not (Test-Path $lang)) {
+            New-Item -ItemType Directory -Force -Path (Split-Path $lang) | Out-Null
+            Invoke-WebRequest -Uri "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl" -OutFile $lang
+          }
           & $iscc /DAppVersion="${{ steps.ver.outputs.version }}" `
             soc_app\windows\packaging\soc-shield.iss
 
