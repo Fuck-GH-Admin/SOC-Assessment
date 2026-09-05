@@ -26,9 +26,11 @@ import 'package:soc_app/presentation/widgets/charts/erosion_bar_chart.dart';
 import 'package:soc_app/presentation/widgets/charts/heatmap_chart.dart';
 import 'package:soc_app/presentation/widgets/charts/pool_pie_chart.dart';
 import 'package:soc_app/presentation/widgets/charts/straw_scenario_chart.dart';
+import 'package:soc_app/presentation/models/assessment_phase.dart';
 import 'package:soc_app/presentation/pages/history/history_page.dart';
 import 'package:soc_app/presentation/pages/resilience/resilience_page.dart';
 import 'package:soc_app/presentation/pages/settings/settings_page.dart';
+import 'package:soc_app/presentation/widgets/phase_banner.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -124,8 +126,14 @@ class _HomePageState extends ConsumerState<HomePage> {
       }
     });
 
+    // 状态机视图：当前先按“已计算/未计算”区分；stale 语义由
+    // 参数修改即清空结果的现有机制保证（修改后 isCalculated 必为 false）。
+    final phase = state.isCalculated
+        ? const AssessmentPhaseView(phase: AssessmentPhase.calculated)
+        : const AssessmentPhaseView(phase: AssessmentPhase.draft);
+
     final calcActions = [
-      if (state.isCalculated)
+      if (state.isCalculated && phase.canExport)
         IconButton(
           icon: _pdfExporting
               ? const SizedBox(
@@ -176,7 +184,9 @@ class _HomePageState extends ConsumerState<HomePage> {
             const ResiliencePage(),
           ],
         ),
-        if (state.isCalculated && _pdfExporting)
+        if (state.isCalculated &&
+            _pdfExporting &&
+            phase.canExport)
           Positioned(
             left: 5000,
             top: 0,
@@ -376,8 +386,127 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   Widget _buildCalcTab(CalculatorState state, ThemeData theme) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
+    final phase = state.isCalculated
+        ? const AssessmentPhaseView(phase: AssessmentPhase.calculated)
+        : const AssessmentPhaseView(phase: AssessmentPhase.draft);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final twoColumn = constraints.maxWidth >= _wideBreakpoint;
+        final inputPanel = _buildInputPanel(state, theme);
+        final resultPanel = _buildResultPanel(state, theme, phase);
+        if (!twoColumn) {
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              inputPanel,
+              if (state.errors.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildErrorCard(state, theme),
+              ],
+              if (state.warnings.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildWarningCard(state, theme),
+              ],
+              const SizedBox(height: 16),
+              resultPanel,
+            ],
+          );
+        }
+        // 桌面工作台：左参数（约 40%）右结果，各自独立滚动。
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: SizedBox(
+                width: double.infinity,
+                child: PhaseBanner(
+                  view: phase,
+                  onReassess: state.isCalculating
+                      ? null
+                      : () => ref.read(calculatorProvider.notifier).calculate(),
+                ),
+              ),
+            ),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        inputPanel,
+                        if (state.errors.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          _buildErrorCard(state, theme),
+                        ],
+                        if (state.warnings.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          _buildWarningCard(state, theme),
+                        ],
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    flex: 3,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(0, 16, 16, 16),
+                      children: [resultPanel],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildErrorCard(CalculatorState state, ThemeData theme) {
+    return Card(
+      color: theme.colorScheme.errorContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '输入错误',
+              style: TextStyle(color: theme.colorScheme.onErrorContainer),
+            ),
+            ...state.errors.map((e) => Text(e)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWarningCard(CalculatorState state, ThemeData theme) {
+    return Card(
+      color: theme.colorScheme.tertiaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '运行提示',
+              style: TextStyle(
+                color: theme.colorScheme.onTertiaryContainer,
+              ),
+            ),
+            ...state.warnings.map((e) => Text(e)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInputPanel(CalculatorState state, ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Card(
           child: Padding(
@@ -385,87 +514,15 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('参数输入', style: theme.textTheme.titleLarge),
+                Text('评估条件', style: theme.textTheme.titleLarge),
                 const SizedBox(height: 6),
                 Text(
-                  'SOC 含量来自施肥 × 侵蚀 × 土层实测数据表；容重用于碳库换算。'
-                  'pH、含水量、黏粉粒和全氮仅作为辅助观测信息，不参与当前核心公式。',
+                  'SOC 含量来自施肥 × 侵蚀 × 土层实测数据表；容重用于碳库换算。',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 16),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final wide = constraints.maxWidth > 500;
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 4,
-                      children: [
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '统一土壤容重 (g/cm^3)',
-                            hint: '0.5-2.5',
-                            controller: _ctrls['bd']!,
-                            enabled: !state.isCalculating && !_pdfExporting,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateBd(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: 'pH值（辅助）',
-                            hint: '3-11',
-                            controller: _ctrls['ph']!,
-                            enabled: !state.isCalculating && !_pdfExporting,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updatePh(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '含水量（辅助，%）',
-                            hint: '0-100',
-                            controller: _ctrls['wc']!,
-                            enabled: !state.isCalculating && !_pdfExporting,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateWc(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '黏粉粒含量（辅助，%）',
-                            hint: '0-100',
-                            controller: _ctrls['clay']!,
-                            enabled: !state.isCalculating && !_pdfExporting,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateClay(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '全氮含量（辅助，g/kg）',
-                            hint: '0-10',
-                            controller: _ctrls['tn']!,
-                            enabled: !state.isCalculating && !_pdfExporting,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateTn(v),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
                 DropdownButtonFormField<String>(
                   key: ValueKey(state.params.fert),
                   initialValue: state.params.fert,
@@ -485,16 +542,17 @@ class _HomePageState extends ConsumerState<HomePage> {
                 DropdownButtonFormField<int>(
                   key: ValueKey(state.params.erosion),
                   initialValue: state.params.erosion,
-                  decoration: const InputDecoration(labelText: '侵蚀程度 (cm)'),
+                  decoration:
+                      const InputDecoration(labelText: '侵蚀程度 (cm)'),
                   items: const [
-                    DropdownMenuItem(value: 0, child: Text('无')),
-                    DropdownMenuItem(value: 10, child: Text('轻度 (10cm)')),
+                    DropdownMenuItem(value: 0, child: Text('无侵蚀（CK，0cm）')),
+                    DropdownMenuItem(value: 10, child: Text('轻度侵蚀（10cm）')),
                     DropdownMenuItem(value: 20, child: Text('20cm')),
                     DropdownMenuItem(value: 30, child: Text('30cm')),
                     DropdownMenuItem(value: 40, child: Text('40cm')),
                     DropdownMenuItem(value: 50, child: Text('50cm')),
                     DropdownMenuItem(value: 60, child: Text('60cm')),
-                    DropdownMenuItem(value: 70, child: Text('重度 (70cm)')),
+                    DropdownMenuItem(value: 70, child: Text('重度侵蚀（70cm）')),
                   ],
                   onChanged: state.isCalculating || _pdfExporting
                       ? null
@@ -527,62 +585,14 @@ class _HomePageState extends ConsumerState<HomePage> {
                           }
                         },
                 ),
-                const SizedBox(height: 20),
-                Text('秸秆还田情景参数', style: theme.textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text(
-                  '以下参数只用于30%、50%和100%秸秆还田碳输入情景，不会反向改写当前实测 SOC。',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
                 const SizedBox(height: 12),
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final wide = constraints.maxWidth > 500;
-                    return Wrap(
-                      spacing: 12,
-                      runSpacing: 4,
-                      children: [
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '秸秆生物量 (kg/ha)',
-                            hint: '例如 8500',
-                            controller: _ctrls['cropBiomass']!,
-                            enabled: !state.isCalculating && !_pdfExporting,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateCropBiomass(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '秸秆碳含量比例 (0-1)',
-                            hint: '例如 0.45',
-                            controller: _ctrls['strawCarbonRatio']!,
-                            enabled: !state.isCalculating && !_pdfExporting,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateStrawCarbonRatio(v),
-                          ),
-                        ),
-                        SizedBox(
-                          width: wide ? 220 : double.infinity,
-                          child: _buildTextField(
-                            label: '基础凋落物碳输入 (kg C/m²)',
-                            hint: '例如 0.15',
-                            controller: _ctrls['litterCarbonInput']!,
-                            enabled: !state.isCalculating && !_pdfExporting,
-                            onChanged: (v) => ref
-                                .read(calculatorProvider.notifier)
-                                .updateLitterCarbonInput(v),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                _buildTextField(
+                  label: '统一土壤容重 (g/cm^3)',
+                  hint: '0.5-2.5',
+                  controller: _ctrls['bd']!,
+                  enabled: !state.isCalculating && !_pdfExporting,
+                  onChanged: (v) =>
+                      ref.read(calculatorProvider.notifier).updateBd(v),
                 ),
                 const SizedBox(height: 8),
                 Align(
@@ -604,43 +614,112 @@ class _HomePageState extends ConsumerState<HomePage> {
             ),
           ),
         ),
-        if (state.errors.isNotEmpty)
-          Card(
-            color: theme.colorScheme.errorContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '输入错误',
-                    style: TextStyle(color: theme.colorScheme.onErrorContainer),
-                  ),
-                  ...state.errors.map((e) => Text(e)),
-                ],
+        const SizedBox(height: 12),
+        // 辅助观测：不参与计算，默认折叠（方案 §3）。
+        Card(
+          child: Theme(
+            data: theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              title: const Text('辅助观测（可选）'),
+              subtitle: const Text(
+                '仅进入报告说明，不改变计算结果',
+                style: TextStyle(fontSize: 12),
               ),
+              children: [
+                _buildTextField(
+                  label: 'pH值',
+                  hint: '3-11',
+                  controller: _ctrls['ph']!,
+                  enabled: !state.isCalculating && !_pdfExporting,
+                  onChanged: (v) =>
+                      ref.read(calculatorProvider.notifier).updatePh(v),
+                ),
+                _buildTextField(
+                  label: '含水量 (%)',
+                  hint: '0-100',
+                  controller: _ctrls['wc']!,
+                  enabled: !state.isCalculating && !_pdfExporting,
+                  onChanged: (v) =>
+                      ref.read(calculatorProvider.notifier).updateWc(v),
+                ),
+                _buildTextField(
+                  label: '黏粉粒含量 (%)',
+                  hint: '0-100',
+                  controller: _ctrls['clay']!,
+                  enabled: !state.isCalculating && !_pdfExporting,
+                  onChanged: (v) =>
+                      ref.read(calculatorProvider.notifier).updateClay(v),
+                ),
+                _buildTextField(
+                  label: '全氮含量 (g/kg)',
+                  hint: '0-10',
+                  controller: _ctrls['tn']!,
+                  enabled: !state.isCalculating && !_pdfExporting,
+                  onChanged: (v) =>
+                      ref.read(calculatorProvider.notifier).updateTn(v),
+                ),
+              ],
             ),
           ),
-        if (state.warnings.isNotEmpty)
-          Card(
-            color: theme.colorScheme.tertiaryContainer,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '运行提示',
-                    style: TextStyle(
-                      color: theme.colorScheme.onTertiaryContainer,
-                    ),
-                  ),
-                  ...state.warnings.map((e) => Text(e)),
-                ],
+        ),
+        const SizedBox(height: 12),
+        // 管理情景：秸秆碳输入核算，默认折叠（方案 §4）。
+        Card(
+          child: Theme(
+            data: theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 16),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              title: const Text('秸秆还田碳输入核算（可选）'),
+              subtitle: const Text(
+                '管理措施输入情景，不预测 SOC 变化',
+                style: TextStyle(fontSize: 12),
               ),
+              children: [
+                _buildTextField(
+                  label: '秸秆生物量 (kg/ha)',
+                  hint: '例如 8500',
+                  controller: _ctrls['cropBiomass']!,
+                  enabled: !state.isCalculating && !_pdfExporting,
+                  onChanged: (v) =>
+                      ref.read(calculatorProvider.notifier).updateCropBiomass(v),
+                ),
+                _buildTextField(
+                  label: '秸秆碳含量比例 (0-1)',
+                  hint: '例如 0.45',
+                  controller: _ctrls['strawCarbonRatio']!,
+                  enabled: !state.isCalculating && !_pdfExporting,
+                  onChanged: (v) => ref
+                      .read(calculatorProvider.notifier)
+                      .updateStrawCarbonRatio(v),
+                ),
+                _buildTextField(
+                  label: '基础凋落物碳输入 (kg C/m²)',
+                  hint: '例如 0.15',
+                  controller: _ctrls['litterCarbonInput']!,
+                  enabled: !state.isCalculating && !_pdfExporting,
+                  onChanged: (v) => ref
+                      .read(calculatorProvider.notifier)
+                      .updateLitterCarbonInput(v),
+                ),
+              ],
             ),
           ),
-        const SizedBox(height: 16),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildResultPanel(
+    CalculatorState state,
+    ThemeData theme,
+    AssessmentPhaseView phase,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
