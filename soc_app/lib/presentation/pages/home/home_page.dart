@@ -215,7 +215,7 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('SOC 土壤碳评估'),
+        title: const Text('碳盾 · SOC-Shield'),
         actions: calcActions,
       ),
       bottomNavigationBar: LayoutBuilder(
