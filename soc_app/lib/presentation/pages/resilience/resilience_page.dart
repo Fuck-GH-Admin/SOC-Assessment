@@ -115,7 +115,7 @@ class ResiliencePage extends ConsumerWidget {
       padding: const EdgeInsets.only(top: 8, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      children: [
           Text(title, style: theme.textTheme.titleMedium),
           Text(
             subtitle,
