@@ -155,7 +155,7 @@ jobs:
           name: ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            dist/soc-shield-setup-*.exe
-            dist/soc-app-windows-*.zip
-            dist/soc-app-android-*.apk
-            dist/soc-app-source-*.zip
+            dist/**/soc-shield-setup-*.exe
+            dist/**/soc-app-windows-*.zip
+            dist/**/soc-app-android-*.apk
+            dist/**/soc-app-source-*.zip
