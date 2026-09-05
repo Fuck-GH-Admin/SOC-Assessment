@@ -51,3 +51,4 @@ soc_app/android/app/build/
 soc_app/android/build/
 soc_app/android/local.properties
 soc_app/.flutter-plugins-dependencies
+/*.docx

@@ -1,0 +1,155 @@
+name: Release
+
+# tag 触发的发版流水线：打 tag 并推送后自动构建三件套并挂到 GitHub Release。
+#   git tag v1.1.6 && git push origin v1.1.6
+# 产物：
+#   soc-shield-setup-<ver>.exe   Windows 安装包（Inno Setup）
+#   soc-app-windows-<ver>.zip    Windows 绿色版
+#   soc-app-android-<ver>.apk    Android APK（默认 debug 签名）
+#   soc-app-source-<ver>.zip     源码包
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发版的 tag（如 v1.1.6）'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows 安装包与绿色版
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 读取版本号
+        id: ver
+        shell: bash
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+          # 校验 pubspec 版本与 tag 一致，防错发
+          PUBSPEC_VER=$(grep -oP '^version: \K[0-9]+\.[0-9]+\.[0-9]+' soc_app/pubspec.yaml)
+          if [[ "$PUBSPEC_VER" != "$VER" ]]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 pubspec 版本 $PUBSPEC_VER 不一致"
+            exit 1
+          fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.2
+
+      - run: flutter pub get
+        working-directory: soc_app
+
+      - run: flutter build windows --release
+        working-directory: soc_app
+
+      - name: Inno Setup 打包安装程序
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y }
+          & $iscc /DAppVersion="${{ steps.ver.outputs.version }}" `
+            soc_app\windows\packaging\soc-shield.iss
+
+      - name: 压缩绿色版 zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "soc_app\build\windows\x64\runner\Release\*" `
+            -DestinationPath "soc-app-windows-${{ steps.ver.outputs.version }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            soc_app/windows/packaging/Output/soc-shield-setup-*.exe
+            soc-app-windows-*.zip
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 读取版本号
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.2
+
+      - run: flutter pub get
+        working-directory: soc_app
+
+      - name: 接受 Android 许可证
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+
+      - run: flutter build apk --release
+        working-directory: soc_app
+
+      - name: 按 tag 重命名 APK
+        run: |
+          cp soc_app/build/app/outputs/flutter-apk/app-release.apk \
+             "soc-app-android-${{ steps.ver.outputs.version }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-artifacts
+          path: soc-app-android-*.apk
+
+  source:
+    name: 源码包
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 读取版本号
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: git archive 源码包
+        run: |
+          git archive --format=zip --prefix=soc-shield/ HEAD \
+            -o "soc-app-source-${{ steps.ver.outputs.version }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: source-artifacts
+          path: soc-app-source-*.zip
+
+  release:
+    name: 发布到 GitHub Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    needs: [windows, android, source]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+
+      - name: 生成 Release 并上传产物
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/soc-shield-setup-*.exe
+            dist/soc-app-windows-*.zip
+            dist/soc-app-android-*.apk
+            dist/soc-app-source-*.zip
