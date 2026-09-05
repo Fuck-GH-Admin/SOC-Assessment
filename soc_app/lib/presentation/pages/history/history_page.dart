@@ -27,6 +27,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
   bool _exporting = false;
   bool _importing = false;
   final Set<int> _deletingIds = {};
+  int? _selectedRecordId;
 
   void _showMessage(String message) {
     if (!mounted) return;
@@ -471,7 +472,7 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('历史记录'),
+        title: const Text('评估记录'),
         actions: [
           IconButton(
             icon: const Icon(Icons.compare_arrows),
@@ -510,8 +511,10 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
         error: (e, _) => Center(child: Text('加载失败: $e')),
         data: (records) {
           if (records.isEmpty) {
-            return const Center(child: Text('暂无历史记录'));
+            return const Center(child: Text('暂无评估记录；完成一次计算后自动保存'));
           }
+          final wide = MediaQuery.of(context).size.width >= 900;
+          if (wide) return _buildWideLayout(records);
           return ListView.builder(
             itemCount: records.length,
             itemBuilder: (context, index) {
@@ -584,6 +587,322 @@ class _HistoryPageState extends ConsumerState<HistoryPage> {
             },
           );
         },
+      ),
+    );
+  }
+
+  /// 桌面端（≥900px）：左侧记录表格 + 右侧详情面板（方案 §评估记录）。
+  Widget _buildWideLayout(List<Map<String, dynamic>> records) {
+    final theme = Theme.of(context);
+    final selected = _selectedRecordId == null
+        ? null
+        : records.where((r) => r['id'] == _selectedRecordId).firstOrNull;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(flex: 3, child: _buildRecordTable(records, theme)),
+        const VerticalDivider(width: 1),
+        Expanded(
+          flex: 2,
+          child: selected == null
+              ? Center(
+                  child: Text(
+                    '选择一条记录查看详情',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                )
+              : _RecordDetailPanel(
+                  record: selected,
+                  onDelete: () async {
+                    final pdfPath = selected['pdfPath'] as String?;
+                    final confirm = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: const Text('删除记录'),
+                        content: Text(
+                          pdfPath == null
+                              ? '确定删除这条历史记录吗？此操作不可撤销。'
+                              : '确定删除这条历史记录吗？关联的应用本地 PDF 也会一并删除。',
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('取消'),
+                          ),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('删除'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirm != true) return;
+                    await _deleteRecord(
+                      selected['id'] as int,
+                      pdfPath,
+                    );
+                    if (mounted) setState(() => _selectedRecordId = null);
+                  },
+                  onLoad: () async {
+                    final params = await _loadRecordParams(selected);
+                    if (params != null && mounted) {
+                      Navigator.pop(context, params);
+                    }
+                  },
+                  onRename: () => _renameRecord(
+                    selected['id'] as int,
+                    selected['label'] as String?,
+                  ),
+                  onPdfActions: () => _showPdfActions(
+                    selected['id'] as int,
+                    selected['pdfPath'] as String,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// 从记录提取参数并做与详情弹窗一致的载入校验；供桌面详情面板复用。
+  Future<CalculationParams?> _loadRecordParams(
+    Map<String, dynamic> record,
+  ) async {
+    final params = record['params'] as CalculationParams;
+    final inputErrors = validateInput(params);
+    if (inputErrors.isNotEmpty) {
+      _showMessage('该记录包含无效输入，不能载入：${inputErrors.join('；')}');
+      return null;
+    }
+    final algorithmVersion = record['algorithmVersion'] as int;
+    if (algorithmVersion != kSocAlgorithmVersion) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('旧算法记录'),
+          content: Text(
+            '此记录使用算法 v$algorithmVersion。载入后只恢复输入参数，'
+            '重新计算将使用当前算法 v$kSocAlgorithmVersion，结果可能不同。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('继续载入'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return null;
+    }
+    return params;
+  }
+
+  Widget _buildRecordTable(
+    List<Map<String, dynamic>> records,
+    ThemeData theme,
+  ) {
+    return SingleChildScrollView(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.all(12),
+        child: DataTable(
+          columnSpacing: 24,
+          headingRowHeight: 44,
+          dataRowMinHeight: 44,
+          dataRowMaxHeight: 44,
+          showCheckboxColumn: false,
+          columns: const [
+            DataColumn(label: Text('名称')),
+            DataColumn(label: Text('施肥')),
+            DataColumn(label: Text('侵蚀')),
+            DataColumn(label: Text('土层')),
+            DataColumn(label: Text('SOC (g/kg)'), numeric: true),
+            DataColumn(label: Text('相对CK (kg C/m²)'), numeric: true),
+            DataColumn(label: Text('创建时间')),
+            DataColumn(label: Text('报告')),
+          ],
+          rows: [
+            for (final record in records)
+              DataRow(
+                selected: record['id'] == _selectedRecordId,
+                onSelectChanged: (_) =>
+                    setState(() => _selectedRecordId = record['id'] as int),
+                cells: [
+                  DataCell(Text(
+                    (record['label'] as String?) ??
+                        'SOC 计算 #${record['id']}',
+                  )),
+                  DataCell(Text(
+                    (record['params'] as CalculationParams).fert == 'F'
+                        ? '施肥'
+                        : '未施肥',
+                  )),
+                  DataCell(Text(
+                    '${(record['params'] as CalculationParams).erosion}cm',
+                  )),
+                  DataCell(Text(
+                    _safeDepthLabel(
+                      (record['params'] as CalculationParams).depth,
+                    ),
+                  )),
+                  DataCell(Text(
+                    (record['result'] as CalculationResult)
+                        .soc
+                        .toStringAsFixed(2),
+                  )),
+                  DataCell(Text(
+                    (record['result'] as CalculationResult)
+                        .netChange
+                        .toStringAsFixed(2),
+                  )),
+                  DataCell(Text(
+                    (record['createdAt'] as DateTime)
+                        .toString()
+                        .substring(0, 16),
+                  )),
+                  DataCell(
+                    (record['pdfPath'] as String?) != null
+                        ? const Icon(Icons.picture_as_pdf, size: 18)
+                        : const Text('—'),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 桌面端右侧详情面板：记录摘要 + 载入/重命名/PDF/删除动作。
+class _RecordDetailPanel extends StatelessWidget {
+  final Map<String, dynamic> record;
+  final VoidCallback onDelete;
+  final VoidCallback onLoad;
+  final VoidCallback onRename;
+  final VoidCallback onPdfActions;
+
+  const _RecordDetailPanel({
+    required this.record,
+    required this.onDelete,
+    required this.onLoad,
+    required this.onRename,
+    required this.onPdfActions,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final params = record['params'] as CalculationParams;
+    final result = record['result'] as CalculationResult;
+    final resilience = record['resilience'] as ResilienceResult?;
+    final pdfPath = record['pdfPath'] as String?;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Text(
+          record['label'] as String? ?? 'SOC 计算 #${record['id']}',
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Text(
+          '创建于 ${(record['createdAt'] as DateTime).toString().substring(0, 19)}'
+          ' · 算法 v${record['algorithmVersion']}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 16),
+        _row(theme, '施肥', params.fert == 'F' ? '施肥' : '未施肥'),
+        _row(theme, '侵蚀深度', '${params.erosion} cm'),
+        _row(theme, 'SOC', '${result.soc} g/kg'),
+        _row(theme, '碳库', '${result.carbonStorage} kg C/m²'),
+        _row(theme, '相对CK碳库差', '${result.netChange} kg C/m²'),
+        _row(theme, '损失率', '${result.lossRate}%'),
+        if (resilience != null) ...[
+          _row(theme, '剖面(0-60cm)差', '${resilience.netChange20yr} kg C/m²'),
+          _row(theme, '状态', resilience.status),
+        ],
+        _row(theme, 'PDF', pdfPath ?? '—'),
+        const SizedBox(height: 16),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            FilledButton.icon(
+              onPressed: onLoad,
+              icon: const Icon(Icons.input, size: 18),
+              label: const Text('载入参数'),
+            ),
+            OutlinedButton.icon(
+              onPressed: onRename,
+              icon: const Icon(Icons.edit, size: 18),
+              label: const Text('重命名'),
+            ),
+            if (pdfPath != null && pdfPath.isNotEmpty)
+              OutlinedButton.icon(
+                onPressed: onPdfActions,
+                icon: const Icon(Icons.picture_as_pdf, size: 18),
+                label: const Text('PDF'),
+              ),
+            TextButton.icon(
+              onPressed: onDelete,
+              icon: Icon(
+                Icons.delete_outline,
+                size: 18,
+                color: theme.colorScheme.error,
+              ),
+              label: Text(
+                '删除',
+                style: TextStyle(color: theme.colorScheme.error),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '载入只恢复输入参数，重新计算使用当前算法；'
+          '完整参数与剖面结果可在记录详情弹窗查看。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _row(ThemeData theme, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
