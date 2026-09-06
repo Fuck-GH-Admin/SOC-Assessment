@@ -1,7 +1,7 @@
 ; 碳盾 · SOC-Shield — Windows 安装包脚本（Inno Setup 6）
 ; 由 GitHub Actions 的 windows runner 在 CI 中调用：
 ;   iscc /DAppVersion=<x.y.z> windows/packaging/soc-shield.iss
-; 产物: Output/soc-shield-setup-<version>.exe
+; 产物: Output/SOC-Shield-<version>-windows-x64-setup.exe
 ; 前置: flutter build windows --release 已完成，bundle 位于
 ;       build/windows/x64/runner/Release/
 
@@ -26,7 +26,7 @@ DefaultDirName={autopf}\{#AppNameEn}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=soc-shield-setup-{#AppVersion}
+OutputBaseFilename=SOC-Shield-{#AppVersion}-windows-x64-setup
 SetupIconFile=..\runner\resources\app_icon.ico
 Compression=lzma2/max
 SolidCompression=yes

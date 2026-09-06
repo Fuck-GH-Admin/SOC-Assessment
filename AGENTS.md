@@ -12,9 +12,9 @@
 
 | File | Source |
 |------|--------|
-| `soc-app-android-<version>.apk` | `build/app/outputs/flutter-apk/app-release.apk` |
-| `soc-app-windows-<version>.zip` | Everything under `build/windows/x64/runner/Release/` |
-| `soc-app-source-<version>.zip` | `git archive HEAD` |
+| `SOC-Shield-<version>-android-arm64.apk` | `build/app/outputs/flutter-apk/app-release.apk` |
+| `SOC-Shield-<version>-windows-x64.zip` | Everything under `build/windows/x64/runner/Release/` |
+| `SOC-Shield-<version>-source.zip` | `git archive HEAD` |
 
 ## AI Feature
 

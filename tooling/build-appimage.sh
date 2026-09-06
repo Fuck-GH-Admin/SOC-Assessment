@@ -93,10 +93,10 @@ if [[ -n "${APPIMAGE_EXTRACT_AND_RUN:-}" || ! -e /dev/fuse ]]; then
   export APPIMAGE_EXTRACT_AND_RUN=1
 fi
 "${APPIMAGETOOL}" "${APPIMAGETOOL_ARGS[@]}" AppDir \
-  "${OUT}/soc-shield-${VERSION}-${APPIMAGE_ARCH}.AppImage"
+  "${OUT}/SOC-Shield-${VERSION}-linux-${APPIMAGE_ARCH}.AppImage"
 
 echo
-echo "产物: ${OUT}/soc-shield-${VERSION}-${APPIMAGE_ARCH}.AppImage"
+echo "产物: ${OUT}/SOC-Shield-${VERSION}-linux-${APPIMAGE_ARCH}.AppImage"
 if [[ "${1:-}" == "--run" ]]; then
-  exec "${OUT}/soc-shield-${VERSION}-${APPIMAGE_ARCH}.AppImage"
+  exec "${OUT}/SOC-Shield-${VERSION}-linux-${APPIMAGE_ARCH}.AppImage"
 fi
