@@ -155,9 +155,9 @@ flutter build web --release
 
 | 产物 | 来源 | 打包方式 |
 |------|------|----------|
-| `soc-app-android-<version>.apk` | `build/app/outputs/flutter-apk/app-release.apk` | `flutter build apk --release` |
-| `soc-app-windows-<version>.zip` | `build/windows/x64/runner/Release/` 下所有文件 | 压缩为 zip |
-| `soc-app-source-<version>.zip` | 仓库根目录（不含 `.git`、`build`、`node_modules`） | `git archive -o source.zip HEAD` |
+| `SOC-Shield-<version>-android-arm64.apk` | `build/app/outputs/flutter-apk/app-release.apk` | `flutter build apk --release` |
+| `SOC-Shield-<version>-windows-x64.zip` | `build/windows/x64/runner/Release/` 下所有文件 | 压缩为 zip |
+| `SOC-Shield-<version>-source.zip` | 仓库根目录（不含 `.git`、`build`、`node_modules`） | `git archive -o source.zip HEAD` |
 
 ### 发布流程
 
@@ -180,16 +180,16 @@ flutter build apk --release
 
 # 4. 构建 Windows（需 VS 命令行环境）
 flutter build windows --release
-Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath soc-app-windows-<version>.zip
+Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath SOC-Shield-<version>-windows-x64.zip
 
 # 5. 打包源码
-git archive -o soc-app-source-<version>.zip HEAD
+git archive -o SOC-Shield-<version>-source.zip HEAD
 
 # 6. 创建 Release（GitHub CLI）
 gh release create v1.1.5 --title "v1.1.5" --notes "变更说明..."
-gh release upload v1.1.5 soc-app-android-<version>.apk
-gh release upload v1.1.5 soc-app-windows-<version>.zip
-gh release upload v1.1.5 soc-app-source-<version>.zip
+gh release upload v1.1.5 SOC-Shield-<version>-android-arm64.apk
+gh release upload v1.1.5 SOC-Shield-<version>-windows-x64.zip
+gh release upload v1.1.5 SOC-Shield-<version>-source.zip
 ```
 
 ## 版本号管理
