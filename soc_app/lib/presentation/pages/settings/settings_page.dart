@@ -6,7 +6,7 @@ import 'package:soc_app/data/ai_config_service.dart';
 import 'package:soc_app/presentation/pages/settings/manual_viewer_page.dart';
 import 'package:soc_app/presentation/providers/ai_config_provider.dart';
 
-final _kVersion = '1.1.5 (build 3)';
+final _kVersion = '1.1.6 (build 4)';
 
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
