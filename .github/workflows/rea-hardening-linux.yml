@@ -6,6 +6,10 @@ on:
       - experiment/rea-soc-hardening-20261123
   workflow_dispatch:
 
+concurrency:
+  group: soc-rea-hardening-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
