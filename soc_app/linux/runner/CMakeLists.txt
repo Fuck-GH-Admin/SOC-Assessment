@@ -24,3 +24,16 @@ target_link_libraries(${BINARY_NAME} PRIVATE flutter)
 target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
+
+# REA experiment: strengthen the Linux launcher in release builds.
+# This targets only the native runner; Dart AOT uses Flutter's toolchain.
+# Avoid debugger detection in business logic to preserve functionality.
+target_compile_options(${BINARY_NAME} PRIVATE
+  "$<$<CONFIG:Release>:-fstack-protector-strong>"
+  "$<$<CONFIG:Release>:-D_FORTIFY_SOURCE=2>"
+)
+target_link_options(${BINARY_NAME} PRIVATE
+  "$<$<CONFIG:Release>:-Wl,-z,relro>"
+  "$<$<CONFIG:Release>:-Wl,-z,now>"
+  "$<$<CONFIG:Release>:-Wl,-z,noexecstack>"
+)
