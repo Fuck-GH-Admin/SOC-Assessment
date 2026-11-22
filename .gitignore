@@ -52,3 +52,7 @@ soc_app/android/build/
 soc_app/android/local.properties
 soc_app/.flutter-plugins-dependencies
 /*.docx
+
+# REA hardening experiment: local release bundles and PRIVATE crash symbols
+.hardening-out/
+**/private-symbols/
