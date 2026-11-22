@@ -2,7 +2,7 @@
 
 **Branch:** `experiment/rea-soc-hardening-20261123`
 **Upstream:** `main` (do not merge until acceptance passes)
-**Status:** hardening toolchain committed; **not an accepted commercial release**.
+**Status:** UPX packing and AES-GCM native SOC data path committed; awaiting CI compatibility verification. **Not an accepted commercial release**.
 
 ## Purpose and scope
 
@@ -29,8 +29,10 @@ should still be treated as recoverable by motivated analysts.
 4. Verify required Flutter runtime and AOT files exist, and generate a
    SHA-256 manifest covering **every distributed file**.
 5. Reject .dart, .symbols, .pdb and .map.json files from the public bundle.
-6. Run the Dart analyzer and Flutter test suite before packaging.
-7. Keep all modifications on this isolated experiment branch.
+6. Apply open-source UPX to the Linux ELF launcher and validate its packed image. The Flutter AOT shared object is NOT packed by UPX.
+7. Generate a native AES-256-GCM-authenticated lookup table for the 80 SOC reference values, expose it through Dart FFI only in the protected Linux Release, and compare every value against the original Dart data. Key material ships with the client and is recoverable.
+8. Run the Dart analyzer and Flutter test suite before packaging.
+9. Keep all modifications on this isolated experiment branch.
 
 The hash manifest enables reproducibility and damage detection against a
 trusted copy, but is **not a digital signature**. For authenticated
@@ -39,8 +41,8 @@ stored outside source control.
 
 ## Not implemented / unsupported claims
 
-- No dynamic self-decrypting packer, multi-layer executable shell, runtime
-  anti-debugging, environment fingerprinting, or self-modifying code.
+- UPX is a genuine runtime-unpacking executable packer, but ONLY for the small Linux launcher. It is reversible, not a VM-protector, and leaves the Flutter libapp.so snapshot untouched.
+- No multi-layer custom executable shell, runtime anti-debugging, environment fingerprinting, or self-modifying code.
 - No attempt to double the source code with defensive junk. Line count is not
   a meaningful measure of security.
 - No claim that client-side constants, data and logic are impossible to recover.
@@ -58,7 +60,7 @@ dependencies installed:
 flutter config --enable-linux-desktop
 python3 -m unittest discover -s tooling/hardening -p 'test_*.py'
 python3 tooling/hardening/build_protected.py \
-  --platform linux --output "$PWD/.hardening-out"
+  --platform linux --native-core --packer upx --output "$PWD/.hardening-out"
 ~~~
 
 On a Windows build host equipped with MSVC and ATL:
@@ -82,6 +84,32 @@ engine binaries, AOT library, native libraries and its asset directory.
 The branch-specific GitHub Actions workflow
 `.github/workflows/rea-hardening-linux.yml` attempts a Linux build and
 uploads only public artifacts if tests and compilation succeed.
+
+## Native core specifics
+
+The normal Dart reference data is retained on the branch for development
+and independent differential tests. The protected Linux Release sets
+`--dart-define=SOC_NATIVE_TABLE=true`, routing the active SOC lookup through
+`DynamicLibrary.process()` into the Linux launcher. Generated native data
+source is removed after compilation and Git-ignored.
+
+The protected native translation unit uses OpenSSL AES-256-GCM. A fixed
+client-side key is masked into two static arrays, which is reversible and
+not equivalent to keeping a server-side secret. The native function
+authenticates and decrypts the reference bytes for each lookup, returns
+the original centesimal SOC value, and wipes its temporary plaintext and
+key buffers. Tampered ciphertext/tag must fail authentication.
+
+The independent native check requires:
+- identical answers for all 80 source reference values;
+- invalid inputs are rejected;
+- changing the authenticated tag leads to a rejection.
+
+Only the **reference data table** is moved out of Dart. Validation, SOC
+formulas, resilience computation, charts, and the rest of Dart business
+logic remain in the AOT snapshot and are not claimed to be protected by
+virtualization. UPX and these changes should not be described as
+commercial-equivalent multi-layer anti-reverse-engineering.
 
 ## Acceptance before calling it functional
 
