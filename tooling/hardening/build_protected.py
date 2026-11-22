@@ -113,14 +113,31 @@ def build(args: argparse.Namespace) -> None:
     else:
         run([args.flutter, "pub", "get"])
 
+    native_generated = APP / "linux/runner/protected_soc_table_generated.cc"
+    if args.native_core and args.platform != "linux":
+        raise RuntimeError("The encrypted FFI core is currently Linux-only")
     command = [args.flutter, "build", args.platform, "--release", "--obfuscate",
                f"--split-debug-info={private_symbols}"]
-    run(command)
+    if args.native_core:
+        from protected_soc_generate import generate
+        generate(native_generated)
+        command.append("--dart-define=SOC_NATIVE_TABLE=true")
+    try:
+        run(command)
+    finally:
+        # The generated C++ translation unit holds recoverable key material.
+        # Do not preserve it in a working tree or a public CI artifact.
+        if args.native_core:
+            native_generated.unlink(missing_ok=True)
 
     relative = ("build/linux/x64/release/bundle" if args.platform == "linux"
                 else "build/windows/x64/runner/Release")
     built_bundle = APP / relative
     verify_runtime_layout(args.platform, built_bundle)
+    if args.native_core:
+        symbols = run(["nm", "-D", str(built_bundle / "soc_app")], ROOT)
+        if "soc_data_access" not in symbols:
+            raise RuntimeError("AOT native SOC entry point missing from ELF")
     shutil.copytree(built_bundle, target_bundle, symlinks=False)
 
     # A genuine, open-source executable packing layer. UPX affects the
@@ -151,6 +168,7 @@ def build(args: argparse.Namespace) -> None:
         "source_commit": revision,
         "protections": {
             "dart_obfuscation": True,
+            "native_soc_table_encrypted_aes256_gcm": args.native_core,
             "split_debug_info": True,
             "debug_symbols_in_public_archive": False,
             "runtime_antidebug": False,
@@ -186,6 +204,8 @@ def main() -> None:
     parser.add_argument("--packer", choices=("none", "upx"), default="none",
                         help="UPX packs the launcher ELF, never libapp.so")
     parser.add_argument("--strip-launcher", action="store_true")
+    parser.add_argument("--native-core", action="store_true",
+                        help="move the SOC reference values into an authenticated, encrypted native ELF routine")
     parser.add_argument("--output", type=Path, default=ROOT / ".hardening-out")
     parser.add_argument("--skip-tests", action="store_true",
                         help="Only when equivalent tests have already passed on same commit")
