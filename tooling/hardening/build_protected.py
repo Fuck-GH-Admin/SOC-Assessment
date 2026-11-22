@@ -123,6 +123,19 @@ def build(args: argparse.Namespace) -> None:
     verify_runtime_layout(args.platform, built_bundle)
     shutil.copytree(built_bundle, target_bundle, symlinks=False)
 
+    # A genuine, open-source executable packing layer. UPX affects the
+    # native Linux launcher only, not the compiled Dart AOT shared object.
+    # Fail closed if UPX cannot pack this Flutter host without errors.
+    if args.packer == "upx":
+        if args.platform != "linux":
+            raise RuntimeError("UPX experiment is currently Linux-only")
+        launcher = target_bundle / "soc_app"
+        run(["strip", "--strip-unneeded", str(launcher)], ROOT)
+        run(["upx", "--best", str(launcher)], ROOT)
+        run(["upx", "-t", str(launcher)], ROOT)
+    elif args.strip_launcher and args.platform == "linux":
+        run(["strip", "--strip-unneeded", str(target_bundle / "soc_app")], ROOT)
+
     file_index = manifest_of(target_bundle)
     forbidden_suffixes = (".dart", ".symbols", ".pdb", ".map.json")
     leaks = [name for name in file_index if name.lower().endswith(forbidden_suffixes)]
@@ -141,7 +154,9 @@ def build(args: argparse.Namespace) -> None:
             "split_debug_info": True,
             "debug_symbols_in_public_archive": False,
             "runtime_antidebug": False,
-            "dynamic_packer": False,
+            "dynamic_packer": args.packer == "upx",
+            "packer": args.packer,
+            "launcher_symbols_stripped": args.packer == "upx" or args.strip_launcher,
         },
         "files": file_index,
     }
@@ -168,6 +183,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--platform", choices=("linux", "windows"), required=True)
     parser.add_argument("--flutter", default="flutter")
+    parser.add_argument("--packer", choices=("none", "upx"), default="none",
+                        help="UPX packs the launcher ELF, never libapp.so")
+    parser.add_argument("--strip-launcher", action="store_true")
     parser.add_argument("--output", type=Path, default=ROOT / ".hardening-out")
     parser.add_argument("--skip-tests", action="store_true",
                         help="Only when equivalent tests have already passed on same commit")
