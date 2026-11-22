@@ -8,20 +8,29 @@ import 'presentation/pages/home/home_page.dart';
 const bool _nativeTableEnabled = bool.fromEnvironment('SOC_NATIVE_TABLE');
 
 void _assertNativeReferenceParity() {
-  // Canary verification of the ACTUAL release-compiled FFI path; a packer
-  // that breaks exported symbols must fail immediately rather than silently
-  // pass a UI-only smoke test.
-  const checks = <(String, int, int, double)>[
-    ('F', 0, 10, 23.90),
-    ('F', 70, 55, 7.70),
-    ('UNF', 0, 25, 17.71),
-    ('UNF', 70, 55, 8.56),
-  ];
-  for (final (fert, erosion, depth, expected) in checks) {
-    final actual = lookupBaseSOC(fert, erosion, depth);
-    if (actual == null || (actual - expected).abs() > 1e-9) {
-      throw StateError('Protected SOC reference validation failed');
+  // Exercise all 80 release FFI calls, not merely the GUI startup.
+  // A digest avoids embedding the 80 plaintext reference values back
+  // into the obfuscated Dart AOT snapshot.
+  const treatments = ['F', 'UNF'];
+  const erosions = [0, 10, 20, 30, 40, 50, 60, 70];
+  const depths = [10, 25, 35, 45, 55];
+  var hash = 0x811c9dc5;
+  for (final treatment in treatments) {
+    for (final erosion in erosions) {
+      for (final depth in depths) {
+        final result = lookupBaseSOC(treatment, erosion, depth);
+        if (result == null || !result.isFinite) {
+          throw StateError('Native SOC reference unavailable');
+        }
+        final centesimal = (result * 100).round();
+        hash = ((hash ^ (centesimal & 255)) * 0x01000193) & 0xffffffff;
+        hash = ((hash ^ ((centesimal >> 8) & 255)) * 0x01000193) &
+            0xffffffff;
+      }
     }
+  }
+  if (hash != 0x1dce3d93) {
+    throw StateError('Protected SOC dataset failed release parity check');
   }
 }
 
