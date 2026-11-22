@@ -20,7 +20,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config \
-            libgtk-3-dev liblzma-dev libsecret-1-dev libsqlite3-dev \
+            libgtk-3-dev liblzma-dev libsecret-1-dev libsqlite3-dev upx-ucl \
             xvfb xauth
 
       - name: Validate hardening packaging helpers
@@ -40,7 +40,13 @@ jobs:
         run: |
           python3 tooling/hardening/build_protected.py \
             --platform linux \
+            --packer upx \
             --output "$RUNNER_TEMP/soc-hardening"
+
+      - name: Verify native executable really is UPX-packed
+        run: |
+          upx -t "$RUNNER_TEMP/soc-hardening/bundles/linux/SOC-Shield/soc_app"
+          upx -l "$RUNNER_TEMP/soc-hardening/bundles/linux/SOC-Shield/soc_app"
 
       - name: Check executable and AOT ELF types
         run: |
