@@ -56,3 +56,6 @@ soc_app/.flutter-plugins-dependencies
 # REA hardening experiment: local release bundles and PRIVATE crash symbols
 .hardening-out/
 **/private-symbols/
+
+# Generated native build translation unit contains recoverable client-side key material
+soc_app/linux/runner/protected_soc_table_generated.cc
