@@ -25,6 +25,15 @@ target_link_libraries(${BINARY_NAME} PRIVATE PkgConfig::GTK)
 
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 
+# Optional generated native table for the isolated REA protection build.
+# A normal developer checkout compiles without it (and without OpenSSL).
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/protected_soc_table_generated.cc")
+  find_package(OpenSSL REQUIRED)
+  target_sources(${BINARY_NAME} PRIVATE "protected_soc_table_generated.cc")
+  target_link_libraries(${BINARY_NAME} PRIVATE OpenSSL::Crypto)
+  # Required for Dart FFI DynamicLibrary.process() to find soc_data_access.
+  set_target_properties(${BINARY_NAME} PROPERTIES ENABLE_EXPORTS ON)
+endif()
 # REA experiment: strengthen the Linux launcher in release builds.
 # This targets only the native runner; Dart AOT uses Flutter's toolchain.
 # Avoid debugger detection in business logic to preserve functionality.
