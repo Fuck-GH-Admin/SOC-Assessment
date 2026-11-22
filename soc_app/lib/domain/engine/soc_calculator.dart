@@ -1,6 +1,9 @@
 import '../models/calculation_params.dart';
 import '../models/calculation_result.dart';
 import '../models/soil_layer.dart';
+import 'protected_soc_table.dart';
+
+const bool _useProtectedNativeTable = bool.fromEnvironment('SOC_NATIVE_TABLE');
 
 const int kSocAlgorithmVersion = 2;
 
@@ -142,6 +145,14 @@ List<String> validateInput(CalculationParams params) {
 }
 
 double? lookupBaseSOC(String fert, int erosion, int depth) {
+  if (_useProtectedNativeTable) {
+    if (!kFertilizerTreatments.contains(fert) ||
+        !kErosionLevels.contains(erosion) ||
+        !kSoilDepthKeys.contains(depth)) {
+      return null;
+    }
+    return protectedSocLookup(fert == 'F' ? 0 : 1, erosion, depth);
+  }
   return _baseData[fert]?[erosion]?[depth];
 }
 
