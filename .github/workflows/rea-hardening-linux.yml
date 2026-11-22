@@ -48,6 +48,22 @@ jobs:
           file "$RUNNER_TEMP/soc-hardening/bundles/linux/SOC-Shield/lib/libapp.so"
           readelf -h "$RUNNER_TEMP/soc-hardening/bundles/linux/SOC-Shield/lib/libapp.so"
 
+      - name: Smoke-launch Linux GUI under a virtual display
+        shell: bash
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=3s 12s \
+            xvfb-run -a "$RUNNER_TEMP/soc-hardening/bundles/linux/SOC-Shield/soc_app" \
+            > "$RUNNER_TEMP/soc-shield-startup.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/soc-shield-startup.log"
+          if [ "$status" -ne 124 ]; then
+            echo "Expected the GUI to remain alive for 12 seconds; exit status=$status"
+            exit 1
+          fi
+          echo "PASS: executable remained alive under Xvfb for 12 seconds"
+
       - name: Check packaged manifest
         run: |
           python3 tooling/hardening/build_protected.py \
