@@ -59,6 +59,20 @@ jobs:
           for f in funcs: by_name[str(f.get("name",""))].append(f)
           targets=["0x5ad860","0x5ae4dc","0x5ae6d4","0x5ae8dc","0x5afa30","0x5b0750","0x5b0eb0","0x5b13a0","0x5b1f04","0x5b300c","0x5de74c","0x5df4c4","0x5e4368","0x5ee61c","0x5eee50","0x5f203c","0x5f2cc0","0x5f6094"]
           target_names={pc:by_pc.get(pc,{}).get("name","") for pc in targets}
+          def edge_targets(e):
+            vals=[]
+            v=e.get("target")
+            if isinstance(v,str): vals.append(v)
+            for key in ["targets","target_names","resolved_targets","candidate_targets","callees","callee_names"]:
+              v=e.get(key)
+              if isinstance(v,str): vals.append(v)
+              elif isinstance(v,list):
+                for item in v:
+                  if isinstance(item,str): vals.append(item)
+                  elif isinstance(item,dict):
+                    for k in ["name","func","target","callee"]:
+                      if isinstance(item.get(k),str): vals.append(item[k])
+            return sorted(set(x for x in vals if x in by_name))
           report += ["","## Target function identities",f"- functions={len(funcs)}; call_edges={len(edges)}; string_refs={len(refs)}"]
           for pc,name in target_names.items():
             f=by_pc.get(pc,{})
