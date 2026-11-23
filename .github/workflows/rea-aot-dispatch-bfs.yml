@@ -117,10 +117,26 @@ jobs:
           for p in root.rglob("ffi-trace.stdout"):
             s=p.read_text(errors="replace")
             report += [f"## CLI FFI trace {p.relative_to(root)} ({len(s)} chars)",s[:22000]]
+          report += ["","## Pipeline output and type-inference diagnostics"]
+          for p in sorted(root.rglob("*")):
+            if p.is_file() and any(k in p.name.lower() for k in ["typetrack","dispatch_table","selector_dispatch","field_accessor_xref"]):
+              report.append(f"- {p.relative_to(root)} ({p.stat().st_size} bytes)")
+              if p.suffix==".json":
+                report.append(p.read_text(errors="replace")[:10000])
+          for name in ["aotopsy-full-pipeline.exit","aotopsy-full-pipeline.stderr","aotopsy-dispatch-table.exit","aotopsy-dispatch-table.stderr","aotopsy-ffi-trace.exit","aotopsy-ffi-trace.stderr"]:
+            hits=list(root.rglob(name))
+            for p in hits:
+              report += [f"### {name}",p.read_text(errors="replace")[:12000]]
+          for name in ["dispatch-table.stdout","ffi-trace.stdout"]:
+            for p in root.rglob(name):
+              s=p.read_text(errors="replace")
+              report += [f"### {name} ({len(s)} chars)",s[:30000]]
           (out/"aotopsy-dispatch-bfs-report.md").write_text("\n".join(report)+"\n")
           (out/"main-root-summary.json").write_text(json.dumps(main_roots,indent=2)+"\n")
           print("MAIN_ROOT_SUMMARY",json.dumps(main_roots,ensure_ascii=False))
-          print((out/"aotopsy-dispatch-bfs-report.md").read_text()[:110000])
+          text=(out/"aotopsy-dispatch-bfs-report.md").read_text()
+          print("REPORT_HEAD\n"+text[:12000])
+          print("REPORT_TAIL\n"+text[-70000:])
           PY
 
       - name: Upload dispatch and call-graph analysis
