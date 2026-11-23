@@ -1,0 +1,134 @@
+name: AOTopsy Dart dispatch and main-root reachability analysis
+on:
+  push:
+    branches:
+      - experiment/rea-aot-dispatch-bfs-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  graph-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Download and verify original AOTopsy reconstruction artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/full" "$RUNNER_TEMP/out"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" -o "$RUNNER_TEMP/full.zip"
+          echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/full.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/full.zip" -d "$RUNNER_TEMP/full"
+
+      - name: Resolve business callers, direct call graph, dispatch selectors and both main roots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,os,json,re,collections,bisect
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"full"
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"out"
+          report=["# AOTopsy dispatch, call graph and main-root analysis","","The analysis uses the already parsed, hash-verified Dart AOT snapshot; it does not consult original source code."]
+          def read_jsonl(p):
+            rows=[]
+            with p.open(errors="replace") as f:
+              for line in f:
+                try: rows.append(json.loads(line))
+                except Exception: pass
+            return rows
+          funcs_path=next((p for p in root.rglob("functions.jsonl") if p.is_file()),None)
+          if not funcs_path:
+            raise SystemExit("functions.jsonl not found")
+          pipe=funcs_path.parent
+          funcs=read_jsonl(funcs_path)
+          edges_path=pipe/"call_edges.jsonl"; refs_path=pipe/"string_refs.jsonl"
+          edges=read_jsonl(edges_path); refs=read_jsonl(refs_path)
+          by_pc={str(x.get("pc","")).lower():x for x in funcs}
+          by_name=collections.defaultdict(list)
+          for f in funcs: by_name[str(f.get("name",""))].append(f)
+          targets=["0x5ad860","0x5ae4dc","0x5ae6d4","0x5ae8dc","0x5afa30","0x5b0750","0x5b0eb0","0x5b13a0","0x5b1f04","0x5b300c","0x5de74c","0x5df4c4","0x5e4368","0x5ee61c","0x5eee50","0x5f203c","0x5f2cc0","0x5f6094"]
+          target_names={pc:by_pc.get(pc,{}).get("name","") for pc in targets}
+          report += ["","## Target function identities",f"- functions={len(funcs)}; call_edges={len(edges)}; string_refs={len(refs)}"]
+          for pc,name in target_names.items():
+            f=by_pc.get(pc,{})
+            report.append(f"- {pc}: {name} size={f.get('size')}")
+          kinds=collections.Counter(str(e.get("kind")) for e in edges)
+          report += ["","## Call-edge kind distribution",json.dumps(kinds,ensure_ascii=False)]
+          report += ["","## Incoming and outgoing direct calls for business candidates"]
+          for pc,name in target_names.items():
+            if not name: continue
+            incoming=[e for e in edges if e.get("kind")=="call" and e.get("target")==name]
+            outgoing=[e for e in edges if e.get("from_func")==name]
+            report.append(f"### {pc} {name}")
+            report.append(f"incoming_direct={len(incoming)} outgoing={len(outgoing)}")
+            report += ["IN "+json.dumps(x,ensure_ascii=False) for x in incoming[:35]]
+            report += ["OUT "+json.dumps(x,ensure_ascii=False) for x in outgoing[:35]]
+          # Build a conservative direct-call graph and test both candidate roots.
+          adjacency=collections.defaultdict(set)
+          reverse=collections.defaultdict(set)
+          for e in edges:
+            if e.get("kind")!="call": continue
+            src=str(e.get("from_func","")); dst=str(e.get("target",""))
+            if src in by_name and dst in by_name:
+              adjacency[src].add(dst); reverse[dst].add(src)
+          main_roots={}
+          for pc in ["0x7d969c","0x7da31c"]:
+            f=by_pc.get(pc,{})
+            root_name=str(f.get("name",""))
+            seen=set(); queue=[root_name] if root_name else []
+            while queue:
+              n=queue.pop()
+              if n in seen: continue
+              seen.add(n)
+              queue.extend(adjacency.get(n,())-seen)
+            reached=[pc2 for pc2,nm in target_names.items() if nm in seen]
+            main_roots[pc]={"name":root_name,"reachable_functions":len(seen),"reachable_business_targets":reached}
+            report += ["",f"## Direct-call reachability from main candidate {pc} ({root_name})",json.dumps(main_roots[pc],ensure_ascii=False)]
+            interesting=[]
+            for n in sorted(seen):
+              fs=by_name.get(n,[])
+              if any(f.get("pc") for f in fs):
+                for f in fs[:1]:
+                  pcx=str(f.get("pc","")).lower()
+                  own=[r for r in refs if str(r.get("func",""))==n]
+                  if own: interesting.append((n,pcx,[str(x.get("value","")) for x in own[:8]]))
+            for n,pcx,vals in interesting[:120]:
+              report.append(f"- {n} {pcx}: {vals}")
+          # String references to business concepts and their owning function.
+          pattern=re.compile(r"carbonStorage|carbonDensity|netChange|recoveryRate|lossRate|algorithmVersion|cropBiomass|soilLayers|socValue|strawCarbonRatio|litterCarbonInput|sqlite3_|SOC 计算|土壤容重|SOC含量应|碳储量|碳密度|施肥处理|当前土层|侵蚀-SOC|侵蚀等级|没有找到施肥",re.I)
+          high=[r for r in refs if pattern.search(str(r.get("value","")))]
+          report += ["","## High-signal string references",f"count={len(high)}"]
+          report += [json.dumps(r,ensure_ascii=False) for r in high[:240]]
+          # Dispatch table and command-level outputs.
+          dispatch_paths=list(root.rglob("dispatch_table.jsonl"))
+          report += ["","## Dispatch table files",json.dumps([str(p.relative_to(root)) for p in dispatch_paths])]
+          for dp in dispatch_paths:
+            rows=read_jsonl(dp)
+            report += [f"### {dp.relative_to(root)} records={len(rows)}",json.dumps(rows[0] if rows else {},ensure_ascii=False)]
+            for sel in ["42492","1934"]:
+              hits=[x for x in rows if sel in json.dumps(x,ensure_ascii=False)]
+              report.append(f"selector {sel}: {len(hits)} matches")
+              report += [json.dumps(x,ensure_ascii=False) for x in hits[:100]]
+          for p in root.rglob("dispatch-table.stdout"):
+            s=p.read_text(errors="replace")
+            report += [f"## CLI dispatch-table output {p.relative_to(root)} ({len(s)} chars)",s[:30000]]
+          for p in root.rglob("ffi-trace.stdout"):
+            s=p.read_text(errors="replace")
+            report += [f"## CLI FFI trace {p.relative_to(root)} ({len(s)} chars)",s[:22000]]
+          (out/"aotopsy-dispatch-bfs-report.md").write_text("\n".join(report)+"\n")
+          (out/"main-root-summary.json").write_text(json.dumps(main_roots,indent=2)+"\n")
+          print("MAIN_ROOT_SUMMARY",json.dumps(main_roots,ensure_ascii=False))
+          print((out/"aotopsy-dispatch-bfs-report.md").read_text()[:110000])
+          PY
+
+      - name: Upload dispatch and call-graph analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-aot-dispatch-bfs-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
