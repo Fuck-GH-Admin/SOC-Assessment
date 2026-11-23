@@ -74,14 +74,30 @@ jobs:
           fi
           find "$RUNNER_TEMP/rea-kit/extracted" -type f \( -name node -o -name rea.mjs -o -name analyzeHeadless -o -name upx -o -name r2 -o -name capa \) -printf '%p\n' | tee "$RUNNER_TEMP/out/inventory/kit-tools.txt"
 
-      - name: Install REA runtime paths and verify Ghidra provider
+      - name: Extract nested offline kit packages, install REA runtime paths and verify Ghidra
         shell: bash
         run: |
           set -euo pipefail
           KIT="$RUNNER_TEMP/rea-kit/extracted"
-          NODE_BIN="$(find "$KIT" -type f -path '*/bin/node' -print -quit)"
-          REA_ENTRY="$(find "$KIT" -type f -path '*/scripts/rea.mjs' -print -quit)"
-          GHIDRA_HEADLESS="$(find "$KIT" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+          NODE_TAR="$(find "$KIT" -type f -name 'node-v24.22.1-linux-x64.tar.xz' -print -quit)"
+          REA_TAR="$(find "$KIT" -type f -name 'rea-fork-54906fd-linux-x64-offline.tar.zst' -print -quit)"
+          GHIDRA_ZIP="$(find "$KIT" -type f -name 'ghidra_12.1.4_PUBLIC_20260921.zip' -print -quit)"
+          UPX_TAR="$(find "$KIT" -type f -name 'upx-5.3.0-amd64_linux.tar.xz' -print -quit)"
+          CAPA_ZIP="$(find "$KIT" -type f -name 'capa-v10.0.0-linux-py313.zip' -print -quit)"
+          R2_DEB="$(find "$KIT" -type f -name 'radare2_6.2.6_amd64.deb' -print -quit)"
+          test -n "$NODE_TAR" && test -n "$REA_TAR" && test -n "$GHIDRA_ZIP"
+          mkdir -p "$KIT/01-node/extracted" "$KIT/02-rea/extracted" "$KIT/03-ghidra/extracted" "$KIT/04-elf/upx" "$KIT/04-elf/capa" "$KIT/04-elf/radare2-root"
+          tar -xJf "$NODE_TAR" -C "$KIT/01-node/extracted"
+          tar --zstd -xf "$REA_TAR" -C "$KIT/02-rea/extracted"
+          unzip -q "$GHIDRA_ZIP" -d "$KIT/03-ghidra/extracted"
+          if [ -n "$UPX_TAR" ]; then tar -xJf "$UPX_TAR" -C "$KIT/04-elf/upx"; fi
+          if [ -n "$CAPA_ZIP" ]; then unzip -q "$CAPA_ZIP" -d "$KIT/04-elf/capa"; fi
+          if [ -n "$R2_DEB" ]; then dpkg-deb -x "$R2_DEB" "$KIT/04-elf/radare2-root"; fi
+          NODE_BIN="$(find "$KIT/01-node/extracted" \( -type f -o -type l \) -path '*/bin/node' -print -quit)"
+          REA_ENTRY="$(find "$KIT/02-rea/extracted" -type f -path '*/scripts/rea.mjs' -print -quit)"
+          GHIDRA_HEADLESS="$(find "$KIT/03-ghidra/extracted" -type f -path '*/support/analyzeHeadless' -print -quit)"
           test -x "$NODE_BIN" && test -f "$REA_ENTRY" && test -x "$GHIDRA_HEADLESS"
           NODE_ROOT="$(dirname "$(dirname "$NODE_BIN")")"
           REA_ROOT="$(dirname "$(dirname "$REA_ENTRY")")"
@@ -91,10 +107,13 @@ jobs:
             echo "REA_NODE=$NODE_BIN"
             echo "REA_ENTRY=$REA_ENTRY"
             echo "GHIDRA_INSTALL_DIR=$GHIDRA_ROOT"
-            echo "GHIDRA_HEADLESS_MAXMEM=3072M"
+            echo "GHIDRA_HEADLESS_MAXMEM=4096M"
             echo "REA_GHIDRA_STARTUP_TIMEOUT_MS=1800000"
             echo "REA_GHIDRA_DECOMPILE_TIMEOUT_SECONDS=900"
-            echo "JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2"
+            echo "JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=3"
+            echo "REA_UPX_BIN=$(find "$KIT/04-elf/upx" -type f -name upx -perm -111 -print -quit)"
+            echo "REA_R2_BIN=$(find "$KIT/04-elf/radare2-root" \( -type f -o -type l \) -name r2 -print -quit)"
+            echo "REA_CAPA_BIN=$(find "$KIT/04-elf/capa" -type f -name capa -perm -111 -print -quit)"
           } >> "$GITHUB_ENV"
           "$NODE_BIN" "$REA_ENTRY" --version | tee "$RUNNER_TEMP/out/logs/rea-version.txt"
           "$NODE_BIN" "$REA_ENTRY" doctor --provider ghidra --json > "$RUNNER_TEMP/out/rea/doctor-ghidra.json" 2> "$RUNNER_TEMP/out/logs/rea-doctor.stderr"
