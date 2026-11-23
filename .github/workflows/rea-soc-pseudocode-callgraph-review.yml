@@ -92,6 +92,26 @@ jobs:
                 if hits:
                   report.append(f"### edge refs {target}: {len(hits)}")
                   report += [json.dumps(e,ensure_ascii=False) for e in hits[:12]]
+              name_by_pc={str(x.get("pc","")).lower():str(x.get("name","")) for x in funcs}
+              report += ["","## Call sites originating inside target business functions"]
+              for target in sorted(targets):
+                nm=name_by_pc.get(target)
+                if not nm: continue
+                rows=[e for e in edges if e.get("from_func")==nm]
+                kinds=collections.Counter(str(e.get("kind")) for e in rows)
+                report.append(f"### {target} {nm}: {len(rows)} call sites; kinds={dict(kinds)}")
+                report += [json.dumps(e,ensure_ascii=False) for e in rows[:18]]
+              direct=[e for e in edges if "direct" in str(e.get("kind","")).lower()]
+              report += ["","## Direct-call edge samples",f"direct_edge_count={len(direct)}"]
+              report += [json.dumps(e,ensure_ascii=False) for e in direct[:30]]
+            dp=pipe.parent/"dispatch_table.jsonl"
+            if dp.exists():
+              dispatch=read_jsonl(dp)
+              report += ["","## Dispatch-table schema",f"records={len(dispatch)}",json.dumps(dispatch[0] if dispatch else {},ensure_ascii=False)]
+              for selector in ["42492","1934"]:
+                hits=[x for x in dispatch if selector in json.dumps(x,ensure_ascii=False)]
+                report.append(f"### Dispatch selector {selector}: {len(hits)} rows")
+                report += [json.dumps(x,ensure_ascii=False) for x in hits[:80]]
             refs=read_jsonl(pipe.parent/"string_refs.jsonl")
             pattern=re.compile(r"carbonStorage|carbonDensity|netChange|recoveryRate|lossRate|algorithmVersion|cropBiomass|soilLayers|socValue|strawCarbonRatio|litterCarbonInput|SOC 计算|土壤容重|SOC含量应|碳储量|碳密度|施肥处理|当前土层|侵蚀-SOC|侵蚀等级|sqlite3_|soc_data_access",re.I)
             hits=[x for x in refs if pattern.search(str(x.get("value","")))]
