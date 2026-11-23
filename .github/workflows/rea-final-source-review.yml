@@ -61,6 +61,47 @@ jobs:
           print(text[:35000])
           PY
 
+      - name: Download and review string-to-function map and source windows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/deep"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14818715858/zip" \
+            -o "$RUNNER_TEMP/deep.zip"
+          echo "9ebc79c2c0f4fb7d61ff2630700ceb95545e0a6eac254cdffb45da2e257e1a04  $RUNNER_TEMP/deep.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/deep.zip" -d "$RUNNER_TEMP/deep"
+          python3 - <<'PY'
+          import pathlib,os,json
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"deep"
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"out"
+          report=["# Recovered Dart source windows and exact function map",""]
+          sr=root/"recovered-source-review.md"
+          if sr.exists():
+            report.append(sr.read_text(errors="replace")[:24000])
+          for name in ["source-metrics.json","function-candidates.tsv","domain-string-refs.json"]:
+            p=root/name
+            if p.exists():
+              report += ["",f"## {name}","",p.read_text(errors="replace")[:18000]]
+          targeted=root/"targeted"
+          if targeted.exists():
+            files=sorted(targeted.glob("*.stdout"))
+            scored=[]
+            terms=["carbonStorage","carbonDensity","netChange","recoveryRate","lossRate","algorithmVersion","soilLayers","cropBiomass","socValue","sqlite3","SOC","soil","sample","depth","erosion","fert","碳储量","土壤容重","施肥","侵蚀"]
+            for p in files:
+              s=p.read_text(errors="replace")
+              if s.strip(): scored.append((sum(s.count(k) for k in terms),len(s),p,s))
+            scored.sort(key=lambda x:(x[0],x[1]),reverse=True)
+            report += ["","## Nonempty string-referenced candidate function decompilations","",f"Nonempty candidates: {len(scored)}"]
+            for score,size,p,s in scored[:15]:
+              report += [f"### {p.name} — keyword score {score}, {size} bytes","",s[:10000]]
+          text="\\n".join(report)+"\\n"
+          (out/"source-and-candidate-review.md").write_text(text)
+          print(text[:40000])
+          PY
+
       - name: Publish code-level report and upload
         if: always()
         shell: bash
