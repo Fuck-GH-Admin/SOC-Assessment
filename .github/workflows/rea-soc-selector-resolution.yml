@@ -1,0 +1,120 @@
+name: Resolve Dart dynamic dispatch selectors for SOC business functions
+on:
+  push:
+    branches:
+      - experiment/rea-selector-resolution-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  resolve-selectors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Download exact AOT, candidate and business pseudocode artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/full" "$RUNNER_TEMP/deep" "$RUNNER_TEMP/dossiers" "$RUNNER_TEMP/out"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" -o "$RUNNER_TEMP/full.zip"
+          echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/full.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/full.zip" -d "$RUNNER_TEMP/full"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14818715858/zip" -o "$RUNNER_TEMP/deep.zip"
+          echo "9ebc79c2c0f4fb7d61ff2630700ceb95545e0a6eac254cdffb45da2e257e1a04  $RUNNER_TEMP/deep.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/deep.zip" -d "$RUNNER_TEMP/deep"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14819361192/zip" -o "$RUNNER_TEMP/dossiers.zip"
+          echo "5766881d053c4bede64b510b5c0c477846856921825a5dff19d75d284f7bc3b7  $RUNNER_TEMP/dossiers.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/dossiers.zip" -d "$RUNNER_TEMP/dossiers"
+
+      - name: Correlate dispatchCall selectors, xrefs, class layouts and function callers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,os,json,re,collections,bisect
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          full=base/"full"; deep=base/"deep"; dossiers=base/"dossiers"; out=base/"out"
+          pipe=next(p for p in full.rglob("functions.jsonl") if p.is_file()).parent
+          def readj(p):
+            rows=[]
+            with p.open(errors="replace") as f:
+              for line in f:
+                try: rows.append(json.loads(line))
+                except Exception: pass
+            return rows
+          funcs=readj(pipe/"functions.jsonl")
+          edges=readj(pipe/"call_edges.jsonl")
+          classes=readj(pipe/"classes.jsonl")
+          bypc={str(f.get("pc","")).lower():f for f in funcs}
+          starts=[]
+          for f in funcs:
+            try: starts.append((int(str(f.get("pc","0")),16),int(f.get("size",0)),f))
+            except Exception: pass
+          starts.sort(); pcs=[x[0] for x in starts]
+          xrefs=next((p for p in full.rglob("selector_dispatch_xref.jsonl") if p.is_file()),None)
+          report=["# SOC AOT selector and field-type resolution","","## Input data"]
+          report += [f"- functions: {len(funcs)}",f"- call edges: {len(edges)}",f"- classes: {len(classes)}",f"- selector xref file: {xrefs.stat().st_size if xrefs else 'MISSING'} bytes"]
+          selector_rows=readj(xrefs) if xrefs else []
+          report += ["","## Selector-xref schema",f"records={len(selector_rows)}",json.dumps(selector_rows[0] if selector_rows else {},ensure_ascii=False)[:3000]]
+          # Parse selector IDs from all actual AOT decompiler output, not from guessed names.
+          sources=[]
+          fdir=next((p for p in dossiers.rglob("functions") if p.is_dir()),None)
+          if fdir:
+            sources.extend((p.stem,p.read_text(errors="replace")) for p in fdir.glob("*.stdout"))
+          tdir=next((p for p in deep.rglob("targeted") if p.is_dir()),None)
+          if tdir:
+            sources.extend((p.stem,p.read_text(errors="replace")) for p in tdir.glob("candidate-*.stdout"))
+          selector_pattern=re.compile(r"dispatchCall\s*\(\s*selector\s*:\s*(\d+)")
+          by_selector=collections.defaultdict(list)
+          for name,src in sources:
+            for sid in selector_pattern.findall(src):
+              by_selector[sid].append(name)
+          report += ["","## Selectors recovered from decompiled functions",f"unique_selectors={len(by_selector)}"]
+          for sid,owners in sorted(by_selector.items(),key=lambda x:int(x[0])):
+            report.append(f"- selector {sid}: {len(owners)} callsites in {sorted(set(owners))}")
+          # Correlate each selector to its xref records and possible callee functions.
+          for sid,owners in sorted(by_selector.items(),key=lambda x:int(x[0])):
+            hits=[r for r in selector_rows if sid in json.dumps(r,ensure_ascii=False)]
+            report.append(f"### selector {sid}: xref_matches={len(hits)}")
+            for row in hits[:120]:
+              blob=json.dumps(row,ensure_ascii=False)
+              report.append(blob[:2400])
+              # Map any PC-like fields in this xref row to the containing AOT function.
+              for k,v in row.items():
+                if isinstance(v,str) and re.fullmatch(r"0x[0-9a-fA-F]+",v):
+                  pc=int(v,16); i=bisect.bisect_right(pcs,pc)-1
+                  if i>=0:
+                    start,size,fn=starts[i]
+                    if size<=0 or pc<start+size:
+                      report.append(f"  PC_OWNER {k}={v} -> {fn.get('name')} at {fn.get('pc')}")
+          # Inspect business class layouts and typed field access evidence.
+          pattern=re.compile(r"soc|soil|carbon|fert|erosion|depth|bulk|density|crop|litter|straw|biomass|sample|layer|netChange|recoveryRate|lossRate",re.I)
+          class_hits=[c for c in classes if pattern.search(json.dumps(c,ensure_ascii=False))]
+          report += ["","## Business-related class layouts",f"high_signal_classes={len(class_hits)}"]
+          report += [json.dumps(c,ensure_ascii=False)[:5000] for c in class_hits[:120]]
+          for name in ["field_accessor_xref.jsonl","field_type_xref.jsonl","selector_dispatch_xref.jsonl"]:
+            for p in pipe.parent.rglob(name):
+              rows=readj(p)
+              hits=[r for r in rows if pattern.search(json.dumps(r,ensure_ascii=False))]
+              report += ["",f"## {name}: {len(rows)} rows, {len(hits)} high-signal rows",json.dumps(rows[0] if rows else {},ensure_ascii=False)]
+              report += [json.dumps(r,ensure_ascii=False)[:2400] for r in hits[:180]]
+          # Include the relevant preserved strings and SQLite xrefs.
+          for p in dossiers.rglob("*.stdout"):
+            if any(x in p.name.lower() for x in ["sqlite3_column_bytes","carbonstorage","algorithmversion","cropbiomass","soil","socvalue"]):
+              s=p.read_text(errors="replace")
+              if s.strip(): report += [f"## {p.name}",s[:6000]]
+          (out/"selector-resolution-report.md").write_text("\n".join(report)+"\n")
+          print((out/"selector-resolution-report.md").read_text()[:95000])
+          PY
+
+      - name: Upload selector resolution report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-selector-resolution-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
