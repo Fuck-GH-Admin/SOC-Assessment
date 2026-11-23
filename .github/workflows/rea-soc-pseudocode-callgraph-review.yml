@@ -1,0 +1,135 @@
+name: SOC AOT pseudocode and call-graph analysis
+on:
+  push:
+    branches:
+      - experiment/rea-soc-callgraph-analysis-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download and verify prior reconstruction artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/full" "$RUNNER_TEMP/dossiers" "$RUNNER_TEMP/out"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" -o "$RUNNER_TEMP/full.zip"
+          echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/full.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/full.zip" -d "$RUNNER_TEMP/full"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14819361192/zip" -o "$RUNNER_TEMP/dossiers.zip"
+          echo "5766881d053c4bede64b510b5c0c477846856921825a5dff19d75d284f7bc3b7  $RUNNER_TEMP/dossiers.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/dossiers.zip" -d "$RUNNER_TEMP/dossiers"
+
+      - name: Analyze all recovered functions, CFG quality and business data flow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,os,re,json,collections
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          full=base/"full"; dossiers=base/"dossiers"; out=base/"out"
+          report=["# SOC AOT pseudocode and call-graph analysis","","## Integrity","Both source artifacts passed their pinned SHA-256 checks.","","## Function-level decompiler results"]
+          fdir=next((p for p in dossiers.rglob("functions") if p.is_dir()),None)
+          labels=["carbon-storage-record","bulk-density-validation","soc-input-validation","crop-biomass-soil-layers","crop-biomass-path","current-layer-report","result-metrics","measured-data-and-density","soc-vertical-distribution","erosion-soc-relation","algorithm-version-access"]
+          allmetrics=[]
+          if fdir:
+            for label in labels:
+              p=fdir/(label+".stdout")
+              if not p.exists(): continue
+              src=p.read_text(errors="replace")
+              ep=fdir/(label+".stderr")
+              err=ep.read_text(errors="replace") if ep.exists() else ""
+              stats={}
+              m=re.search(r"stats:\s*(\{.*?\})",err,re.S)
+              if m:
+                try: stats=json.loads(m.group(1))
+                except Exception: pass
+              cfg=re.findall(r"CFG verification:\s*([^\n]+)",src)
+              metric={"label":label,"bytes":len(src.encode()),"lines":src.count("\n")+1,"dispatch_calls":src.count("dispatchCall("),"stub_calls":len(re.findall(r"\bstub\s*\(",src)),"local_placeholders":len(set(re.findall(r"\blocal_[A-Za-z0-9_]+",src))),"omitted_code_markers":src.count("code omitted"),"cfg":cfg,"stats":stats}
+              allmetrics.append(metric)
+              report += [f"### {label}",json.dumps(metric,ensure_ascii=False),"","BEGIN PSEUDOCODE",src[:8500],"END PSEUDOCODE"]
+              if len(src)>8500: report.append(f"Full output retained in artifact; this excerpt omits {len(src)-8500} bytes.")
+              if err.strip(): report += ["Decompiler stats:",err[:2500]]
+          report += ["","## All 13 function output metrics"]
+          if fdir:
+            for p in sorted(fdir.glob("*.stdout")):
+              src=p.read_text(errors="replace")
+              err=(fdir/(p.stem+".stderr")).read_text(errors="replace") if (fdir/(p.stem+".stderr")).exists() else ""
+              m=re.search(r"stats:\s*(\{.*?\})",err,re.S); stats={}
+              if m:
+                try: stats=json.loads(m.group(1))
+                except Exception: pass
+              report.append(json.dumps({"function":p.stem,"bytes":len(src.encode()),"lines":src.count("\n")+1,"dispatch_calls":src.count("dispatchCall("),"omitted":src.count("code omitted"),"stats":stats},ensure_ascii=False))
+          # JSONL schemas and direct caller/callee references.
+          pipe=next((p for p in full.rglob("functions.jsonl") if p.is_file()),None)
+          def read_jsonl(p):
+            rows=[]
+            with p.open(errors="replace") as f:
+              for line in f:
+                try: rows.append(json.loads(line))
+                except Exception: pass
+            return rows
+          targets={"0x4ce930","0x4d03a8","0x4d079c","0x4d0ad4","0x4d10fc","0x5ad860","0x5ae4dc","0x5ae6d4","0x5ae8dc","0x5afa30","0x5b0750","0x5b0eb0","0x5b13a0","0x5b1f04","0x5b300c","0x5de74c","0x5df4c4","0x5e4368","0x5ee61c","0x5eee50","0x5f203c","0x5f2cc0","0x5f6094"}
+          if pipe:
+            funcs=read_jsonl(pipe)
+            report += ["","## Function JSONL schema",f"records={len(funcs)}",json.dumps(funcs[0] if funcs else {},ensure_ascii=False)]
+            for x in funcs:
+              blob=json.dumps(x,ensure_ascii=False).lower()
+              if any(t in blob for t in targets): report.append("TARGET FUNCTION "+json.dumps(x,ensure_ascii=False))
+            ep=pipe.parent/"call_edges.jsonl"
+            if ep.exists():
+              edges=read_jsonl(ep)
+              report += ["","## Call-edge JSONL schema",f"records={len(edges)}",json.dumps(edges[0] if edges else {},ensure_ascii=False)]
+              for target in sorted(targets):
+                hits=[e for e in edges if target in json.dumps(e,ensure_ascii=False).lower()]
+                if hits:
+                  report.append(f"### edge refs {target}: {len(hits)}")
+                  report += [json.dumps(e,ensure_ascii=False) for e in hits[:12]]
+            refs=read_jsonl(pipe.parent/"string_refs.jsonl")
+            pattern=re.compile(r"carbonStorage|carbonDensity|netChange|recoveryRate|lossRate|algorithmVersion|cropBiomass|soilLayers|socValue|strawCarbonRatio|litterCarbonInput|SOC 计算|土壤容重|SOC含量应|碳储量|碳密度|施肥处理|当前土层|侵蚀-SOC|侵蚀等级|sqlite3_|soc_data_access",re.I)
+            hits=[x for x in refs if pattern.search(str(x.get("value","")))]
+            report += ["","## High-signal string-to-function map",f"records={len(hits)}"]
+            report += [json.dumps(x,ensure_ascii=False) for x in hits[:220]]
+          # REA outputs, including failures, not just exit codes.
+          rea_dir=next((p for p in full.rglob("rea") if p.is_dir()),None)
+          if rea_dir:
+            report += ["","## REA output inventory"]
+            for p in sorted(rea_dir.glob("*")):
+              if p.is_file():
+                data=p.read_text(errors="replace")
+                report += [f"### {p.name} ({len(data)} chars)",data[:7000]]
+          logdir=next((p for p in full.rglob("logs") if p.is_dir()),None)
+          if logdir:
+            report += ["","## REA and AOTopsy failure diagnostics"]
+            for name in ["launcher-layout.stderr","libapp-layout.stderr","aotopsy-decompile-from-main.stderr","aotopsy-decompile-from-main.exit","rea-doctor.stderr","upx-test.exit","upx-decompress.exit","radare2-launcher.exit","radare2-libapp.exit","capa-launcher.exit","capa-libapp.exit"]:
+              p=logdir/name
+              if p.exists(): report += [f"### {name}",p.read_text(errors="replace")[:8000]]
+          # Save full machine-readable summary and print bounded report.
+          (out/"pseudocode-callgraph-review.md").write_text("\n".join(report)+"\n")
+          (out/"function-metrics.json").write_text(json.dumps(allmetrics,ensure_ascii=False,indent=2)+"\n")
+          print("FUNCTION_METRICS",json.dumps(allmetrics,ensure_ascii=False))
+          print((out/"pseudocode-callgraph-review.md").read_text()[:100000])
+          PY
+
+      - name: Publish summary
+        if: always()
+        shell: bash
+        run: |
+          cat "$RUNNER_TEMP/out/pseudocode-callgraph-review.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complete code-level analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-pseudocode-callgraph-review-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
