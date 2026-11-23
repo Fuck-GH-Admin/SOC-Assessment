@@ -61,6 +61,123 @@ jobs:
               tt=json.loads(typetrack.read_text(errors="replace"))
               report.append("type-track summary: "+json.dumps(tt,ensure_ascii=False))
             except Exception: report.append("type-track report parse failed")
+          # Parse the complete CLI table, which restores method names omitted from JSONL slot records.
+          cli_table=next((p for p in redec.rglob("dispatch-table.stdout") if p.is_file()),None)
+          slot_names={}
+          if cli_table:
+            for line in cli_table.read_text(errors="replace").splitlines():
+              m=re.match(r'dispatch\[(\d+)\]\s+kind=(\w+)\s+name="(.*)"          for pc,f in targets.items():
+            name=str(f.get("name",""))
+            if not name: report.append(f"### {pc}: not found"); continue
+            owned=[x for x in fields if name in x.get("readers",[]) or name in x.get("writers",[])]
+            report.append(f"### {pc} {name} size={f.get('size')} owner={f.get('owner')} field_xrefs={len(owned)}")
+            cids=sorted({int(x.get("class_id")) for x in owned if isinstance(x.get("class_id"),int)})
+            for cid in cids:
+              c=class_by_id.get(cid,{})
+              report.append(f"CLASS {cid} {c.get('class_name')} size={c.get('instance_size')} fields={json.dumps(c.get('fields',[]),ensure_ascii=False)}")
+            for x in owned:
+              report.append("FIELD "+json.dumps(x,ensure_ascii=False))
+          # Reverse edges: show actual resolved callers, including polymorphic Targets.
+          incoming=collections.defaultdict(list)
+          for e in edges:
+            vals=[]
+            if isinstance(e.get("target"),str): vals.append(e["target"])
+            if isinstance(e.get("targets"),list): vals += [x for x in e["targets"] if isinstance(x,str)]
+            for dst in set(vals):
+              if dst in target_names: incoming[dst].append(e)
+          report += ["","## Incoming callers to business candidate functions"]
+          for pc,f in targets.items():
+            name=str(f.get("name",""))
+            if not name: continue
+            rows=incoming.get(name,[])
+            report.append(f"### {pc} {name}: incoming={len(rows)}")
+            for e in rows[:60]: report.append("IN "+json.dumps(e,ensure_ascii=False))
+          # Outgoing indirect calls and their inferred candidates.
+          report += ["","## Outgoing indirect calls from business candidates"]
+          for pc,f in targets.items():
+            name=str(f.get("name",""))
+            if not name: continue
+            rows=[e for e in edges if e.get("from_func")==name and e.get("kind") in ("call_indirect","blr")]
+            report.append(f"### {pc} {name}: indirect={len(rows)}")
+            for e in rows[:80]: report.append("INDIRECT "+json.dumps(e,ensure_ascii=False))
+          # AOTopsy prints the dispatch selector offset in pseudo-code. For x86_64:
+          # selectorCandidates computes class ID = dispatch index - selector offset.
+          function_dir=next((p for p in redec.rglob("functions") if p.is_dir()),None)
+          selector_sites=collections.defaultdict(list)
+          if function_dir:
+            for p in function_dir.glob("*.stdout"):
+              src=p.read_text(errors="replace")
+              for sel in re.findall(r"dispatchCall\s*\(\s*selector\s*:\s*(\d+)",src):
+                selector_sites[int(sel)].append(p.stem)
+          report += ["","## Exact selector-offset to dispatch-slot join"]
+          report.append("This is a CHA candidate set, not a proof of runtime receiver type. Candidate class_id = dispatch_table.index - selector_offset.")
+          for selector,owners in sorted(selector_sites.items()):
+            rows=[]
+            for d in dispatch:
+              idx=d.get("index")
+              if d.get("kind")!="code" or not isinstance(idx,int): continue
+              cid=idx-selector
+              if cid in class_by_id:
+                cl=class_by_id[cid]
+                rows.append({"selector_offset":selector,"class_id":cid,"class_name":cl.get("class_name"),"slot":idx,"target":d.get("target") or slot_names.get(idx,{}).get("name"),"slot_info":d.get("slot_info")})
+            report.append(f"### selector_offset={selector} owners={sorted(set(owners))} candidates={len(rows)}")
+            for row in rows[:120]: report.append("DISPATCH "+json.dumps(row,ensure_ascii=False))
+          # Show dispatch table representation and CLI syntax for any future resolver fix.
+          report += ["","## Dispatch table raw examples"]
+          report += ["JSONL "+json.dumps(x,ensure_ascii=False) for x in dispatch if x.get("kind")=="code" and (x.get("target") or x.get("slot_info"))][:30]
+          for p in redec.rglob("dispatch-table.stdout"):
+            lines=p.read_text(errors="replace").splitlines()
+            report += [f"CLI dispatch-table sample: {p} lines={len(lines)}"]+lines[:80]
+            report += ["CLI code rows"]+[x for x in lines if "code" in x.lower()][:80]
+          (out/"soc-caller-field-dispatch-join.md").write_text("\n".join(report)+"\n")
+          text=(out/"soc-caller-field-dispatch-join.md").read_text()
+          print("REPORT_HEAD\n"+text[:15000])
+          print("REPORT_TAIL\n"+text[-70000:])
+          PY
+          cat "$RUNNER_TEMP/out/soc-caller-field-dispatch-join.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload caller and field-access evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-caller-field-dispatch-join-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
+,line)
+              if m: slot_names[int(m.group(1))]={"kind":m.group(2),"name":m.group(3)}
+          report += ["","## Compact candidate function summary"]
+          for pc,f in targets.items():
+            name=str(f.get("name",""))
+            if not name: continue
+            owned=[x for x in fields if name in x.get("readers",[]) or name in x.get("writers",[])]
+            inc=incoming.get(name,[])
+            calls=[e for e in edges if e.get("from_func")==name]
+            direct=[e.get("target") for e in calls if e.get("kind") in ("call","bl") and e.get("target")]
+            indirect=[e for e in calls if e.get("kind") in ("call_indirect","blr")]
+            resolved=[{"pc":e.get("from_pc"),"target":e.get("target"),"targets":e.get("targets",[]),"candidates":e.get("candidates")} for e in indirect if e.get("target") or e.get("targets")]
+            report.append(json.dumps({"pc":pc,"name":name,"size":f.get("size"),"field_xrefs":len(owned),"incoming_edges":len(inc),"direct_calls":len(direct),"indirect_calls":len(indirect),"resolved_indirect":len(resolved),"direct_targets":sorted(set(direct))[:25],"indirect_targets":resolved[:20]},ensure_ascii=False))
+          report += ["","## Candidate dispatch targets by method name"]
+          selector_sites=collections.defaultdict(list)
+          if function_dir:
+            for p in function_dir.glob("*.stdout"):
+              src=p.read_text(errors="replace")
+              for sel in re.findall(r"dispatchCall\s*\(\s*selector\s*:\s*(\d+)",src):
+                selector_sites[int(sel)].append(p.stem)
+          for selector,owners in sorted(selector_sites.items()):
+            grouped=collections.defaultdict(list)
+            for d in dispatch:
+              idx=d.get("index")
+              if d.get("kind")!="code" or not isinstance(idx,int): continue
+              cid=idx-selector
+              if cid not in class_by_id: continue
+              cl=class_by_id[cid]
+              name=d.get("target") or slot_names.get(idx,{}).get("name")
+              grouped[str(name or "<unresolved>")].append({"cid":cid,"class":cl.get("class_name"),"slot":idx,"cluster":d.get("slot_info")})
+            report.append(f"### selector_offset={selector} owners={sorted(set(owners))} distinct_targets={len(grouped)}")
+            for name,rows in sorted(grouped.items(),key=lambda x:(-len(x[1]),x[0]))[:50]:
+              report.append(json.dumps({"target":name,"class_count":len(rows),"examples":rows[:8]},ensure_ascii=False))
           report += ["","## Candidate function field-access profile"]
           for pc,f in targets.items():
             name=str(f.get("name",""))
