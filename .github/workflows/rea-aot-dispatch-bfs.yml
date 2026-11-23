@@ -36,8 +36,9 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import pathlib,os,json,re,collections,bisect
-          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"full"
-          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"out"
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          root=base/"full"
+          out=base/"out"
           report=["# AOTopsy dispatch, call graph and main-root analysis","","The analysis uses the already parsed, hash-verified Dart AOT snapshot; it does not consult original source code."]
           def read_jsonl(p):
             rows=[]
