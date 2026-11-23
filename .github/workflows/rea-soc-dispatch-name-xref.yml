@@ -1,0 +1,134 @@
+name: SOC dispatch-name and business xref resolution
+on:
+  push:
+    branches:
+      - experiment/rea-soc-dispatch-name-join-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  join:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download verified AOTopsy snapshot and decompiler outputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/full" "$RUNNER_TEMP/redec" "$RUNNER_TEMP/out"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" -o "$RUNNER_TEMP/full.zip"
+          echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/full.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/full.zip" -d "$RUNNER_TEMP/full"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14829075652/zip" -o "$RUNNER_TEMP/redec.zip"
+          echo "1120049b7dd396d7482d7225aabfe36d5cce8e68744466052477c8d0881cce05  $RUNNER_TEMP/redec.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/redec.zip" -d "$RUNNER_TEMP/redec"
+
+      - name: Resolve slot names and rank business xrefs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,os,json,re,collections
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          full=base/"full"; redec=base/"redec"; out=base/"out"
+          def readj(p):
+            if not p: return []
+            rows=[]
+            with p.open(errors="replace") as f:
+              for line in f:
+                try: rows.append(json.loads(line))
+                except Exception: pass
+            return rows
+          def findfile(name,root=full):
+            return next((p for p in root.rglob(name) if p.is_file()),None)
+          funcs=readj(findfile("functions.jsonl"))
+          edges=readj(findfile("call_edges.jsonl"))
+          fields=readj(findfile("field_accessor_xref.jsonl"))
+          classes=readj(findfile("classes.jsonl"))
+          dispatch=readj(findfile("dispatch_table.jsonl"))
+          strings=readj(findfile("string_refs.jsonl"))
+          bypc={str(f.get("pc","")).lower():f for f in funcs}
+          class_by_id={int(c["class_id"]):c for c in classes if isinstance(c.get("class_id"),int)}
+          slot_names={}
+          cli=next((p for p in redec.rglob("dispatch-table.stdout") if p.is_file()),None)
+          if cli:
+            for line in cli.read_text(errors="replace").splitlines():
+              m=re.match(r'dispatch\[(\d+)\]\s+kind=(\w+)\s+name="(.*)"$',line)
+              if m: slot_names[int(m.group(1))]={"kind":m.group(2),"name":m.group(3)}
+          target_pcs=["0x5ad860","0x5ae4dc","0x5ae6d4","0x5ae8dc","0x5afa30","0x5b0750","0x5b0eb0","0x5b13a0","0x5b1f04","0x5b300c","0x5de74c","0x5df4c4","0x5e4368","0x5ee61c","0x5eee50","0x5f203c","0x5f2cc0","0x5f6094","0x7d969c","0x7da31c"]
+          target_names={pc:str(bypc.get(pc,{}).get("name","")) for pc in target_pcs}
+          target_set={x for x in target_names.values() if x}
+          incoming=collections.defaultdict(list)
+          for e in edges:
+            dsts=[]
+            if isinstance(e.get("target"),str): dsts.append(e["target"])
+            if isinstance(e.get("targets"),list): dsts.extend(x for x in e["targets"] if isinstance(x,str))
+            for dst in set(dsts):
+              if dst in target_set: incoming[dst].append(e)
+          report=["# SOC dispatch-name and business xref resolution","","## Dataset counts",f"functions={len(funcs)} call_edges={len(edges)} field_xrefs={len(fields)} classes={len(classes)} dispatch_slots={len(dispatch)} string_refs={len(strings)}",f"dispatch CLI named slots={len(slot_names)}"]
+          typetrack=findfile("typetrack_report.json")
+          if typetrack:
+            report.append("TYPE_TRACK "+json.dumps(json.loads(typetrack.read_text(errors="replace")),ensure_ascii=False))
+          report += ["","## Target function summary"]
+          for pc,name in target_names.items():
+            f=bypc.get(pc,{})
+            if not name: report.append(f"{pc}: NOT FOUND"); continue
+            fx=[x for x in fields if name in x.get("readers",[]) or name in x.get("writers",[])]
+            calls=[e for e in edges if e.get("from_func")==name]
+            direct=[e for e in calls if e.get("kind") in ("call","bl")]
+            indirect=[e for e in calls if e.get("kind") in ("call_indirect","blr")]
+            resolved=[e for e in indirect if e.get("target") or e.get("targets")]
+            report.append(json.dumps({"pc":pc,"name":name,"size":f.get("size"),"field_xrefs":len(fx),"incoming_edges":len(incoming.get(name,[])),"direct_calls":len(direct),"indirect_calls":len(indirect),"resolved_indirect":len(resolved),"direct_targets":sorted({e.get("target") for e in direct if e.get("target")})[:20],"resolved_indirect_examples":[{"pc":e.get("from_pc"),"target":e.get("target"),"targets":e.get("targets"),"candidates":e.get("candidates")} for e in resolved[:12]]},ensure_ascii=False))
+          report += ["","## Field-access class clusters for target functions"]
+          for pc,name in target_names.items():
+            if not name: continue
+            fx=[x for x in fields if name in x.get("readers",[]) or name in x.get("writers",[])]
+            if not fx: continue
+            report.append(f"### {pc} {name}")
+            for x in fx[:40]:
+              c=class_by_id.get(x.get("class_id"),{})
+              report.append(json.dumps({"class_id":x.get("class_id"),"class_name":x.get("class_name"),"field":x.get("field_name"),"byte_offset":x.get("byte_offset"),"class_size":c.get("instance_size"),"read_by":name in x.get("readers",[]),"written_by":name in x.get("writers",[]),"readers":x.get("readers",[])[:12],"writers":x.get("writers",[])[:12]},ensure_ascii=False))
+          report += ["","## Selector offset to named dispatch targets"]
+          selector_sites=collections.defaultdict(list)
+          fdir=next((p for p in redec.rglob("functions") if p.is_dir()),None)
+          if fdir:
+            for p in fdir.glob("*.stdout"):
+              src=p.read_text(errors="replace")
+              for sel in re.findall(r"dispatchCall\s*\(\s*selector\s*:\s*(\d+)",src):
+                selector_sites[int(sel)].append(p.stem)
+          for selector,owners in sorted(selector_sites.items()):
+            groups=collections.defaultdict(list)
+            for d in dispatch:
+              idx=d.get("index")
+              if d.get("kind")!="code" or not isinstance(idx,int): continue
+              cid=idx-selector
+              if cid not in class_by_id: continue
+              c=class_by_id[cid]
+              nm=d.get("target") or slot_names.get(idx,{}).get("name") or "<unnamed>"
+              groups[nm].append({"class_id":cid,"class_name":c.get("class_name"),"slot":idx,"cluster":d.get("slot_info")})
+            report.append(f"### selector_offset={selector} owners={sorted(set(owners))} named_target_groups={len(groups)}")
+            for nm,rows in sorted(groups.items(),key=lambda x:(-len(x[1]),x[0]))[:40]:
+              report.append(json.dumps({"target":nm,"class_count":len(rows),"examples":rows[:8]},ensure_ascii=False))
+          report += ["","## Business-language string xrefs"]
+          pat=re.compile(r"SOC|碳储量|碳密度|碳库|净变化|恢复率|损失率|土壤容重|施肥|侵蚀|土层|作物生物量|秸秆|凋落物|算法版本|没有找到|SOC含量应|计算结果|历史记录|测定数据|统一土壤容重|相对CK",re.I)
+          hits=[s for s in strings if pat.search(str(s.get("value","")))]
+          report.append(f"matches={len(hits)}")
+          for s in hits[:350]: report.append(json.dumps(s,ensure_ascii=False))
+          (out/"soc-dispatch-name-xref-report.md").write_text("\n".join(report)+"\n")
+          text=(out/"soc-dispatch-name-xref-report.md").read_text()
+          print("REPORT_HEAD\n"+text[:18000])
+          print("REPORT_TAIL\n"+text[-70000:])
+          PY
+          cat "$RUNNER_TEMP/out/soc-dispatch-name-xref-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload named dispatch and xref report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-dispatch-name-xref-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
