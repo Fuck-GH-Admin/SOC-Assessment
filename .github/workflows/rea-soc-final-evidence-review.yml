@@ -1,0 +1,127 @@
+name: Final source and call-graph review for SOC AOT
+on:
+  push:
+    branches:
+      - experiment/rea-final-source-review-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  recover-and-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Download immutable prior REA and AOTopsy artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/prior/full" "$RUNNER_TEMP/prior/dossiers" "$RUNNER_TEMP/review"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" \
+            -o "$RUNNER_TEMP/prior/full.zip"
+          echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/prior/full.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/prior/full.zip" -d "$RUNNER_TEMP/prior/full"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14819361192/zip" \
+            -o "$RUNNER_TEMP/prior/dossiers.zip"
+          echo "5766881d053c4bede64b510b5c0c477846856921825a5dff19d75d284f7bc3b7  $RUNNER_TEMP/prior/dossiers.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/prior/dossiers.zip" -d "$RUNNER_TEMP/prior/dossiers"
+          find "$RUNNER_TEMP/prior/full" "$RUNNER_TEMP/prior/dossiers" -type f -printf '%P\t%s bytes\n' | sort > "$RUNNER_TEMP/review/artifact-file-inventory.tsv"
+          cat "$RUNNER_TEMP/review/artifact-file-inventory.tsv"
+
+      - name: Extract the actual decompiler output and REA findings
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,os,json,re
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          full=base/"prior/full"; dossiers=base/"prior/dossiers"; out=base/"review"
+          report=["# SOC AOT reverse-engineering evidence review","","## Artifact integrity","- Full reconstruction ZIP SHA-256: verified","- Business dossier ZIP SHA-256: verified","","## Actual AOTopsy single-function decompiler output"]
+          fdir=next((p for p in dossiers.rglob("functions") if p.is_dir()),None)
+          if fdir is None:
+            report.append("ERROR: functions output directory not found.")
+          else:
+            for p in sorted(fdir.glob("*.stdout")):
+              s=p.read_text(errors="replace")
+              stderr=p.with_suffix(".stderr")
+              err=stderr.read_text(errors="replace") if stderr.exists() else ""
+              report += [f"### {p.stem} ({len(s.encode())} bytes; {s.count(chr(10))+1} lines)","", "Decompiler stdout:", "BEGIN PSEUDOCODE", s[:18000], "END PSEUDOCODE"]
+              if err.strip(): report += ["Decompiler stderr:", "BEGIN STDERR", err[:6000], "END STDERR"]
+              if len(s)>18000: report.append(f"Output truncated in this report; full output remains in artifact ({len(s)} bytes).")
+            for p in sorted(fdir.glob("*.exit")):
+              report.append(f"- Exit {p.stem}: {p.read_text().strip()}")
+          pipe=next((p for p in full.rglob("functions.jsonl") if p.name=="functions.jsonl"),None)
+          if pipe:
+            def read_jsonl(p):
+              rows=[]
+              with p.open(errors="replace") as f:
+                for line in f:
+                  try: rows.append(json.loads(line))
+                  except Exception: pass
+              return rows
+            funcs=read_jsonl(pipe)
+            report += ["","## AOTopsy function metadata schema",f"- Records: {len(funcs)}",f"- First record: {json.dumps(funcs[0] if funcs else {},ensure_ascii=False)[:1600]}"]
+            targets=["0x4ce930","0x4d03a8","0x4d079c","0x4d0ad4","0x4d10fc","0x5ad860","0x5ae4dc","0x5ae6d4","0x5ae8dc","0x5afa30","0x5b0750","0x5b0eb0","0x5b13a0","0x5b1f04","0x5b300c","0x5de74c","0x5df4c4","0x5e4368","0x5ee61c","0x5eee50","0x5f203c","0x5f2cc0","0x5f6094"]
+            for target in targets:
+              hits=[x for x in funcs if str(x.get("pc","")).lower()==target]
+              if hits: report.append(f"- {target}: {json.dumps(hits[0],ensure_ascii=False)[:1400]}")
+            edges_path=pipe.parent/"call_edges.jsonl"
+            if edges_path.exists():
+              edges=read_jsonl(edges_path)
+              report += ["","## Call-edge schema",f"- Records: {len(edges)}",f"- First record: {json.dumps(edges[0] if edges else {},ensure_ascii=False)[:1800]}"]
+              for target in targets:
+                matches=[]
+                for edge in edges:
+                  blob=json.dumps(edge,ensure_ascii=False).lower()
+                  if target in blob: matches.append(edge)
+                if matches:
+                  report.append(f"### Edges mentioning {target} ({len(matches)} records)")
+                  report += ["- "+json.dumps(x,ensure_ascii=False)[:1400] for x in matches[:20]]
+            refs_path=pipe.parent/"string_refs.jsonl"
+            if refs_path.exists():
+              refs=read_jsonl(refs_path)
+              needles=re.compile(r"carbonStorage|algorithmVersion|cropBiomass|soilLayers|socValue|SOC 计算|土壤容重|SOC含量应|碳储量|碳密度|施肥处理|当前土层|侵蚀-SOC|侵蚀等级|sqlite3_|soc_data_access",re.I)
+              report += ["","## High-signal business string references"]
+              hits=[x for x in refs if needles.search(str(x.get("value","")))]
+              report.append(f"- High-signal references: {len(hits)}")
+              for x in hits[:180]: report.append("- "+json.dumps(x,ensure_ascii=False)[:1200])
+          rea=next((p for p in full.rglob("doctor-ghidra.json") if p.is_file()),None)
+          if rea:
+            report += ["","## REA / Ghidra doctor", "BEGIN JSON", rea.read_text(errors="replace")[:8000], "END JSON"]
+          for name in ["launcher-inspect.json","libapp-inspect.json","launcher-layout.json","libapp-layout.json","release-exposure.json"]:
+            p=next((x for x in full.rglob(name) if x.is_file()),None)
+            if p:
+              report += [f"### REA {name}","BEGIN JSON",p.read_text(errors="replace")[:10000],"END JSON"]
+              err=full/"logs"/(p.stem+".stderr")
+              if err.exists(): report += ["stderr:", "BEGIN STDERR",err.read_text(errors="replace")[:6000],"END STDERR"]
+          for name in ["decompile-from-main.exit","decompile-from-main.stderr","decompile-from-main.stdout"]:
+            p=next((x for x in full.rglob(name) if x.is_file()),None)
+            if p:
+              report += [f"## Prior {name}","BEGIN TEXT",p.read_text(errors="replace")[:12000],"END TEXT"]
+          asset=next((p for p in dossiers.rglob("asset-analysis.md") if p.is_file()),None)
+          if asset:
+            report += ["## Packaged asset inventory","BEGIN TEXT",asset.read_text(errors="replace")[:12000],"END TEXT"]
+          (out/"evidence-review.md").write_text("\n".join(report)+"\n")
+          print((out/"evidence-review.md").read_text()[:48000])
+          PY
+
+      - name: Publish evidence review
+        if: always()
+        shell: bash
+        run: |
+          cat "$RUNNER_TEMP/review/evidence-review.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "See uploaded artifact for complete function pseudocode and machine-readable source records." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload actual pseudocode and evidence review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-final-evidence-review-20261123
+          path: ${{ runner.temp }}/review/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
