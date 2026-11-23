@@ -1,0 +1,155 @@
+name: REA Ghidra independent cross-check of SOC business functions
+on:
+  push:
+    branches:
+      - experiment/rea-ghidra-soc-crosscheck-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  ghidra-crosscheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - name: Download and verify SOC binary and REA offline kit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/kit" "$RUNNER_TEMP/target" "$RUNNER_TEMP/out/rea" "$RUNNER_TEMP/out/logs"
+          base="https://github.com/Fuck-GH-Admin/rea/releases/download/rea-offline-kit-20261123"
+          for n in 001 002 003 004; do
+            curl --fail --location --retry 4 --retry-all-errors "$base/REA-Offline-Kit-20261123-public.tar.gz.part-$n" -o "$RUNNER_TEMP/kit/part-$n"
+          done
+          cat "$RUNNER_TEMP/kit"/part-* > "$RUNNER_TEMP/kit/offline-kit.tar.gz"
+          echo "997e960ce9704356f4ca43a4ae40c0a0aa63fb7c90364ad1a637ed0efceffcf7  $RUNNER_TEMP/kit/offline-kit.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/kit/extracted"
+          tar -xzf "$RUNNER_TEMP/kit/offline-kit.tar.gz" -C "$RUNNER_TEMP/kit/extracted"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14771559896/zip" -o "$RUNNER_TEMP/target.zip"
+          echo "7b50a68e9f5fe388845a806419baf71e3ba5138bb3ad0a6da0d91fb6f12cc8c3  $RUNNER_TEMP/target.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/target.zip" -d "$RUNNER_TEMP/target/archive"
+          inner="$(find "$RUNNER_TEMP/target/archive" -name soc-shield-linux-x64.tar.gz -print -quit)"
+          test -n "$inner"
+          tar -xzf "$inner" -C "$RUNNER_TEMP/target"
+          LIBAPP="$(find "$RUNNER_TEMP/target" -name libapp.so -print -quit)"
+          LAUNCHER="$(find "$RUNNER_TEMP/target" -name soc_app -print -quit)"
+          echo "3c42c61436618aeec58473c434c7f3908ea15a05b6c0267a13b56327d01d30c8  $LIBAPP" | sha256sum --check -
+          echo "eb9b74c1c08720af0528b598b30617f9f72db62337d2e9f541a8778ecb2f9f56  $LAUNCHER" | sha256sum --check -
+          echo "SOC_LIBAPP=$LIBAPP" >> "$GITHUB_ENV"
+          echo "SOC_LAUNCHER=$LAUNCHER" >> "$GITHUB_ENV"
+
+      - name: Extract nested REA, Node and Ghidra
+        shell: bash
+        run: |
+          set -euo pipefail
+          KIT="$RUNNER_TEMP/kit/extracted"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+          NODE_TAR="$(find "$KIT" -type f -name 'node-v24.22.1-linux-x64.tar.xz' -print -quit)"
+          REA_TAR="$(find "$KIT" -type f -name 'rea-fork-54906fd-linux-x64-offline.tar.zst' -print -quit)"
+          GHIDRA_ZIP="$(find "$KIT" -type f -name 'ghidra_12.1.4_PUBLIC_20260921.zip' -print -quit)"
+          test -n "$NODE_TAR" && test -n "$REA_TAR" && test -n "$GHIDRA_ZIP"
+          mkdir -p "$KIT/node" "$KIT/rea" "$KIT/ghidra"
+          tar -xJf "$NODE_TAR" -C "$KIT/node"
+          tar --zstd -xf "$REA_TAR" -C "$KIT/rea"
+          unzip -q "$GHIDRA_ZIP" -d "$KIT/ghidra"
+          NODE_BIN="$(find "$KIT/node" -type f -path '*/bin/node' -print -quit)"
+          REA_ENTRY="$(find "$KIT/rea" -type f -path '*/scripts/rea.mjs' -print -quit)"
+          GHIDRA_HEADLESS="$(find "$KIT/ghidra" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          test -x "$NODE_BIN" && test -f "$REA_ENTRY" && test -x "$GHIDRA_HEADLESS"
+          NODE_ROOT="$(dirname "$(dirname "$NODE_BIN")")"
+          REA_ROOT="$(dirname "$(dirname "$REA_ENTRY")")"
+          GHIDRA_ROOT="$(dirname "$(dirname "$GHIDRA_HEADLESS")")"
+          echo "REA_NODE=$NODE_BIN" >> "$GITHUB_ENV"
+          echo "REA_ENTRY=$REA_ENTRY" >> "$GITHUB_ENV"
+          echo "GHIDRA_INSTALL_DIR=$GHIDRA_ROOT" >> "$GITHUB_ENV"
+          echo "PATH=$NODE_ROOT/bin:$REA_ROOT/node_modules/.bin:$PATH" >> "$GITHUB_ENV"
+          echo "GHIDRA_HEADLESS_MAXMEM=4096M" >> "$GITHUB_ENV"
+          echo "REA_GHIDRA_STARTUP_TIMEOUT_MS=1800000" >> "$GITHUB_ENV"
+          echo "REA_GHIDRA_DECOMPILE_TIMEOUT_SECONDS=900" >> "$GITHUB_ENV"
+          echo "JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=3" >> "$GITHUB_ENV"
+          export PATH="$NODE_ROOT/bin:$REA_ROOT/node_modules/.bin:$PATH"
+          export GHIDRA_INSTALL_DIR="$GHIDRA_ROOT"
+          export GHIDRA_HEADLESS_MAXMEM=4096M
+          "$NODE_BIN" "$REA_ENTRY" --version | tee "$RUNNER_TEMP/out/logs/rea-version.txt"
+          java -version 2> "$RUNNER_TEMP/out/logs/java-version.txt"
+          "$NODE_BIN" "$REA_ENTRY" doctor --provider ghidra --json > "$RUNNER_TEMP/out/rea/doctor-ghidra.json" 2> "$RUNNER_TEMP/out/logs/doctor-ghidra.stderr"
+          cat "$RUNNER_TEMP/out/rea/doctor-ghidra.json"
+
+      - name: REA ELF metadata and broad native inventory
+        shell: bash
+        run: |
+          set -uo pipefail
+          run_rea() {
+            local name="$1"; shift
+            printf '$'; printf ' %q' "$@"; printf '\n' > "$RUNNER_TEMP/out/logs/$name.command.txt"
+            set +e
+            timeout --signal=TERM --kill-after=30s 1800 "$@" > "$RUNNER_TEMP/out/rea/$name.json" 2> "$RUNNER_TEMP/out/logs/$name.stderr"
+            local rc=$?
+            set -e
+            echo "$rc" > "$RUNNER_TEMP/out/logs/$name.exit"
+            echo "$name exit=$rc"
+          }
+          run_rea libapp-elf-notes "$REA_NODE" "$REA_ENTRY" inspect-elf-notes "$SOC_LIBAPP" --json
+          run_rea launcher-elf-notes "$REA_NODE" "$REA_ENTRY" inspect-elf-notes "$SOC_LAUNCHER" --json
+          run_rea libapp-inspect "$REA_NODE" "$REA_ENTRY" inspect "$SOC_LIBAPP" --provider ghidra --json --timings
+          run_rea libapp-search-density "$REA_NODE" "$REA_ENTRY" search "$SOC_LIBAPP" 0x5de74c --kind procedures --provider ghidra --json
+          run_rea libapp-search-results "$REA_NODE" "$REA_ENTRY" search "$SOC_LIBAPP" 0x5f203c --kind procedures --provider ghidra --json
+
+      - name: Independently decompile and inspect SOC business functions with REA Ghidra
+        shell: bash
+        run: |
+          set -uo pipefail
+          run_rea() {
+            local name="$1"; shift
+            printf '$'; printf ' %q' "$@"; printf '\n' > "$RUNNER_TEMP/out/logs/$name.command.txt"
+            set +e
+            timeout --signal=TERM --kill-after=30s 1500 "$@" > "$RUNNER_TEMP/out/rea/$name.json" 2> "$RUNNER_TEMP/out/logs/$name.stderr"
+            local rc=$?
+            set -e
+            echo "$rc" > "$RUNNER_TEMP/out/logs/$name.exit"
+            echo "$name exit=$rc"
+          }
+          for addr in 0x5de74c 0x5df4c4 0x5e4368 0x5f2cc0 0x5eee50; do
+            safe="$(echo "$addr" | tr -cd '[:alnum:]x')"
+            run_rea "function-$safe" "$REA_NODE" "$REA_ENTRY" function "$SOC_LIBAPP" "$addr" --provider ghidra --json
+            run_rea "decompile-$safe" "$REA_NODE" "$REA_ENTRY" decompile "$SOC_LIBAPP" "$addr" --provider ghidra --json
+          done
+          run_rea refs-incoming-result-metrics "$REA_NODE" "$REA_ENTRY" procedure-references "$SOC_LIBAPP" 0x5f203c --provider ghidra --direction incoming --detail summary --json
+          run_rea refs-outgoing-measured-density "$REA_NODE" "$REA_ENTRY" procedure-references "$SOC_LIBAPP" 0x5f2cc0 --provider ghidra --direction outgoing --detail summary --json
+          true
+
+      - name: Summarize independent REA evidence and limitations
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib,os,json
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"out"
+          report=["# Independent REA / Ghidra SOC cross-check","","- Target ELF and libapp hashes verified against the pinned original artifact.","- REA and Ghidra were installed from the pinned offline kit.",""]
+          for p in sorted((root/"rea").glob("*.json")):
+            try: obj=json.loads(p.read_text(errors="replace"))
+            except Exception:
+              report += [f"## {p.name}","Invalid or non-JSON output",p.read_text(errors="replace")[:4000],""]; continue
+            report += [f"## {p.name}",json.dumps(obj,ensure_ascii=False,indent=2)[:9000],""]
+          for p in sorted((root/"logs").glob("*.exit")):
+            name=p.stem; status=p.read_text().strip()
+            err=root/"logs"/(name+".stderr")
+            report.append(f"- {name}: exit {status}")
+            if err.exists() and err.stat().st_size:
+              report += ["  stderr: "+err.read_text(errors="replace")[:3000].replace("\n"," | ")]
+          (root/"rea-crosscheck-report.md").write_text("\n".join(report)+"\n")
+          print((root/"rea-crosscheck-report.md").read_text()[:60000])
+          PY
+          cat "$RUNNER_TEMP/out/rea-crosscheck-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload REA Ghidra independent cross-check
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-ghidra-soc-crosscheck-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
