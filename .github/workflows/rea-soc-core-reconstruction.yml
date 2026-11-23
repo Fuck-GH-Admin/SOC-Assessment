@@ -1,0 +1,176 @@
+name: SOC calculation core, persistence and validation reconstruction
+on:
+  push:
+    branches:
+      - experiment/rea-soc-core-reconstruction-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  core-decompile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Download and verify the exact SOC binary and AOTopsy snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/target" "$RUNNER_TEMP/tools" "$RUNNER_TEMP/full" "$RUNNER_TEMP/out/functions" "$RUNNER_TEMP/out/logs"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14771559896/zip" -o "$RUNNER_TEMP/target.zip"
+          echo "7b50a68e9f5fe388845a806419baf71e3ba5138bb3ad0a6da0d91fb6f12cc8c3  $RUNNER_TEMP/target.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/target.zip" -d "$RUNNER_TEMP/target/archive"
+          inner="$(find "$RUNNER_TEMP/target/archive" -name soc-shield-linux-x64.tar.gz -print -quit)"
+          test -n "$inner"
+          tar -xzf "$inner" -C "$RUNNER_TEMP/target"
+          LIBAPP="$(find "$RUNNER_TEMP/target" -name libapp.so -print -quit)"
+          echo "3c42c61436618aeec58473c434c7f3908ea15a05b6c0267a13b56327d01d30c8  $LIBAPP" | sha256sum --check -
+          echo "SOC_LIBAPP=$LIBAPP" >> "$GITHUB_ENV"
+          curl --fail --location --retry 4 "https://github.com/BroNils/aotopsy/releases/download/v1.6.0/aotopsy_v1.6.0_linux_amd64.tar.gz" -o "$RUNNER_TEMP/tools/aotopsy.tar.gz"
+          echo "a16d5c9f79f34a4cdff5565128f58d0d97d7b1de058b395358f77dfff817ba45  $RUNNER_TEMP/tools/aotopsy.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/tools/aotopsy"
+          tar -xzf "$RUNNER_TEMP/tools/aotopsy.tar.gz" -C "$RUNNER_TEMP/tools/aotopsy"
+          AOT="$(find "$RUNNER_TEMP/tools/aotopsy" -name aotopsy -type f -perm -111 -print -quit)"
+          echo "AOTOPSY_BIN=$AOT" >> "$GITHUB_ENV"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" -o "$RUNNER_TEMP/full.zip"
+          echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/full.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/full.zip" -d "$RUNNER_TEMP/full"
+          "$AOT" --version > "$RUNNER_TEMP/out/logs/aotopsy-version.txt" 2>&1 || true
+
+      - name: Resolve string owners and decompile calculation, lookup and validation functions
+        shell: bash
+        run: |
+          set -uo pipefail
+          python3 - <<'PY'
+          import pathlib,os,json,re
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          full=base/"full"; out=base/"out"
+          def readj(name):
+            p=next((x for x in full.rglob(name) if x.is_file()),None)
+            rows=[]
+            if p:
+              with p.open(errors="replace") as f:
+                for line in f:
+                  try: rows.append(json.loads(line))
+                  except Exception: pass
+            return rows
+          funcs=readj("functions.jsonl")
+          strings=readj("string_refs.jsonl")
+          names=[
+            "sub_57b5d8","stub_225ea4","stub_226108","stub_226204","sub_56a9c0","sub_56c0e0",
+            "stub_3483b4","stub_348d50","stub_3719ac","stub_409a50","stub_40dbc0","stub_40a214",
+            "stub_40c568","stub_3507d4","sub_580700","stub_3531b0","stub_356a90","stub_3580c8",
+            "sub_579690","sub_5757dc","stub_35149c","stub_3525a4","stub_352b80","stub_34ad88"
+          ]
+          byname={}
+          for f in funcs: byname.setdefault(str(f.get("name","")),[]).append(f)
+          manifest=[]
+          for name in names:
+            rows=byname.get(name,[])
+            if not rows:
+              print("MISSING_FUNCTION",name); continue
+            for f in rows:
+              pc=str(f.get("pc",""))
+              manifest.append({"name":name,"pc":pc,"size":f.get("size"),"owner":f.get("owner")})
+          (out/"core-target-manifest.json").write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+"\n")
+          print("TARGET_MANIFEST",json.dumps(manifest,ensure_ascii=False))
+          PY
+          while IFS=$'\t' read -r name pc; do
+            [ -n "$pc" ] || continue
+            safe="$(printf '%s' "$name-$pc" | tr -cd '[:alnum:]x_-')"
+            set +e
+            timeout --signal=TERM --kill-after=20s 180 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --func "$pc" --max-steps 30000 \
+              > "$RUNNER_TEMP/out/functions/$safe.stdout" 2> "$RUNNER_TEMP/out/logs/$safe.stderr"
+            rc=$?
+            set -e
+            echo "$rc" > "$RUNNER_TEMP/out/logs/$safe.exit"
+            echo "decompile $name $pc exit=$rc"
+          done < <(python3 - "$RUNNER_TEMP/out/core-target-manifest.json" <<'PY'
+          import json,sys
+          for x in json.load(open(sys.argv[1])):
+            print(x["name"]+"\t"+x["pc"])
+          PY
+          )
+
+      - name: Build calculation and data-flow dossier
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,os,json,re,collections
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          full=base/"full"; out=base/"out"
+          def readj(name):
+            p=next((x for x in full.rglob(name) if x.is_file()),None)
+            rows=[]
+            if p:
+              with p.open(errors="replace") as f:
+                for line in f:
+                  try: rows.append(json.loads(line))
+                  except Exception: pass
+            return rows
+          funcs=readj("functions.jsonl"); edges=readj("call_edges.jsonl")
+          fields=readj("field_accessor_xref.jsonl"); strings=readj("string_refs.jsonl")
+          byname=collections.defaultdict(list)
+          for f in funcs: byname[str(f.get("name",""))].append(f)
+          manifest=json.loads((out/"core-target-manifest.json").read_text())
+          report=["# SOC calculation core and data-flow reconstruction","","## Scope and evidence","Target functions were selected from high-signal SOC, database, validation, CK-comparison and report strings. Function names are AOTopsy labels, not recovered original source names.",""]
+          for item in manifest:
+            name=item["name"]; pc=item["pc"]
+            safe=re.sub(r"[^A-Za-z0-9_x-]","",name+"-"+pc)
+            p=out/"functions"/(safe+".stdout")
+            src=p.read_text(errors="replace") if p.exists() else ""
+            errp=out/"logs"/(safe+".stderr")
+            err=errp.read_text(errors="replace") if errp.exists() else ""
+            f=next((x for x in byname.get(name,[]) if str(x.get("pc",""))==pc),{})
+            fx=[x for x in fields if name in x.get("readers",[]) or name in x.get("writers",[])]
+            ownstr=[x for x in strings if x.get("func")==name]
+            calls=[e for e in edges if e.get("from_func")==name]
+            incoming=[]
+            for e in edges:
+              ds=[]
+              if isinstance(e.get("target"),str): ds.append(e["target"])
+              if isinstance(e.get("targets"),list): ds += [x for x in e["targets"] if isinstance(x,str)]
+              if name in ds: incoming.append(e)
+            cfg=re.findall(r"CFG verification:[^\n]+",src)
+            stats={}
+            m=re.search(r"stats:\s*(\{.*?\})",err,re.S)
+            if m:
+              try: stats=json.loads(m.group(1))
+              except Exception: pass
+            ops=[x.strip() for x in src.splitlines() if re.search(r"Float64_|Int64_|Double|pow|sqrt|/|\\*|\\+|-",x) and len(x.strip())<240]
+            nums=sorted(set(re.findall(r"(?<![A-Za-z_])(?:\d+\.\d+|\d+)(?![A-Za-z_])",src)),key=lambda x:(float(x) if re.match(r"^\d",x) else 0))[:120]
+            report += [f"## {name} @ {pc}",json.dumps({"size":f.get("size"),"field_xrefs":len(fx),"string_refs":len(ownstr),"outgoing_edges":len(calls),"incoming_edges":len(incoming),"cfg":cfg,"stats":stats,"dispatch_calls":src.count("dispatchCall("),"bytes":len(src.encode()),"lines":src.count(chr(10))+1},ensure_ascii=False)]
+            report += ["### Business strings"]+[json.dumps(x,ensure_ascii=False) for x in ownstr[:50]]
+            report += ["### Field accesses"]+[json.dumps(x,ensure_ascii=False) for x in fx[:80]]
+            report += ["### Incoming call edges"]+[json.dumps(x,ensure_ascii=False) for x in incoming[:40]]
+            report += ["### Outgoing call edges"]+[json.dumps(x,ensure_ascii=False) for x in calls[:60]]
+            report += ["### Arithmetic / conversion operations"]+ops[:100]
+            report += ["### Numeric literals",", ".join(nums)]
+            if err.strip(): report += ["### Decompiler diagnostics",err[:4000]]
+            if src.strip():
+              report += ["### Pseudocode",src[:14000]]
+              if len(src)>14000: report.append(f"Complete pseudocode retained in artifact ({len(src)} bytes).")
+            else: report.append("No pseudocode output was produced.")
+          # A ranked view of business-language strings across the entire AOT snapshot.
+          pat=re.compile(r"SOC|碳储量|碳密度|碳库|净变化|恢复率|损失率|土壤容重|施肥|侵蚀|土层|作物生物量|秸秆|凋落物|算法版本|没有找到|SOC含量应|计算结果|历史记录|测定数据|统一土壤容重|相对CK|剖面|缺少CK|覆盖0-60|20cm",re.I)
+          hits=[x for x in strings if pat.search(str(x.get("value","")))]
+          report += ["","## High-signal business string owner index",f"matches={len(hits)}"]
+          report += [json.dumps(x,ensure_ascii=False) for x in hits[:450]]
+          (out/"soc-calculation-core-dossier.md").write_text("\n".join(report)+"\n")
+          text=(out/"soc-calculation-core-dossier.md").read_text()
+          print("REPORT_HEAD\n"+text[:15000])
+          print("REPORT_TAIL\n"+text[-85000:])
+          PY
+          cat "$RUNNER_TEMP/out/soc-calculation-core-dossier.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SOC core reconstruction dossier
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-calculation-core-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
