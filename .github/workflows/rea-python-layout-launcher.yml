@@ -124,6 +124,13 @@ jobs:
           run_rea launcher-procedures-flutter "$REA_NODE" "$REA_ENTRY" search "$RUNNER_TEMP/target/soc_app.unpacked" "flutter|engine|libapp|gtk" --kind procedures --mode regex --provider ghidra --json
           run_rea launcher-main-function "$REA_NODE" "$REA_ENTRY" function "$RUNNER_TEMP/target/soc_app.unpacked" "main" --provider ghidra --json
           run_rea launcher-main-decompile "$REA_NODE" "$REA_ENTRY" decompile "$RUNNER_TEMP/target/soc_app.unpacked" "main" --provider ghidra --json
+          run_rea launcher-search-myapp "$REA_NODE" "$REA_ENTRY" search "$RUNNER_TEMP/target/soc_app.unpacked" "my_application" --kind procedures --provider ghidra --json
+          run_rea launcher-search-plugin-registration "$REA_NODE" "$REA_ENTRY" search "$RUNNER_TEMP/target/soc_app.unpacked" "register_with_registrar|fl_register_plugins" --kind procedures --mode regex --provider ghidra --json
+          run_rea launcher-myapp-new "$REA_NODE" "$REA_ENTRY" decompile "$RUNNER_TEMP/target/soc_app.unpacked" "my_application_new" --provider ghidra --json
+          run_rea launcher-myapp-activate "$REA_NODE" "$REA_ENTRY" decompile "$RUNNER_TEMP/target/soc_app.unpacked" "my_application_activate" --provider ghidra --json
+          run_rea launcher-plugin-registration "$REA_NODE" "$REA_ENTRY" decompile "$RUNNER_TEMP/target/soc_app.unpacked" "fl_register_plugins" --provider ghidra --json
+          run_rea launcher-main-outgoing "$REA_NODE" "$REA_ENTRY" procedure-references "$RUNNER_TEMP/target/soc_app.unpacked" "main" --provider ghidra --direction outgoing --detail summary --json
+          run_rea launcher-myapp-incoming "$REA_NODE" "$REA_ENTRY" procedure-references "$RUNNER_TEMP/target/soc_app.unpacked" "my_application_new" --provider ghidra --direction incoming --detail summary --json
           run_rea dart-instructions-density "$REA_NODE" "$REA_ENTRY" instructions "$SOC_LIBAPP" 0x5de74c --provider ghidra --json
           run_rea dart-instructions-results "$REA_NODE" "$REA_ENTRY" instructions "$SOC_LIBAPP" 0x5f203c --provider ghidra --json
           true
