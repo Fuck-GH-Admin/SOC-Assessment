@@ -1,0 +1,176 @@
+name: Deep review of recovered SOC Dart source
+on:
+  push:
+    branches:
+      - experiment/rea-artifact-deep-review-20261123
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  review-reconstruction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Download verified reconstruction output from the full REA run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/recovered" "$RUNNER_TEMP/target" "$RUNNER_TEMP/tools" "$RUNNER_TEMP/review"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" \
+            -o "$RUNNER_TEMP/recovered.zip"
+          echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/recovered.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/recovered.zip" -d "$RUNNER_TEMP/recovered"
+          test -s "$RUNNER_TEMP/recovered/aotopsy/reconstructed-app/app/app.dart"
+          echo "Reconstruction artifact integrity passed." | tee "$RUNNER_TEMP/review/artifact-status.txt"
+
+      - name: Retrieve original libapp.so and verified AOTopsy 1.6.0 for targeted function dossiers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14771559896/zip" \
+            -o "$RUNNER_TEMP/target.zip"
+          unzip -q "$RUNNER_TEMP/target.zip" -d "$RUNNER_TEMP/target/archive"
+          inner="$(find "$RUNNER_TEMP/target/archive" -name soc-shield-linux-x64.tar.gz -print -quit)"
+          tar -xzf "$inner" -C "$RUNNER_TEMP/target"
+          LIBAPP="$(find "$RUNNER_TEMP/target" -name libapp.so -print -quit)"
+          echo "3c42c61436618aeec58473c434c7f3908ea15a05b6c0267a13b56327d01d30c8  $LIBAPP" | sha256sum --check -
+          echo "SOC_LIBAPP=$LIBAPP" >> "$GITHUB_ENV"
+          curl --fail --location --retry 4 \
+            "https://github.com/BroNils/aotopsy/releases/download/v1.6.0/aotopsy_v1.6.0_linux_amd64.tar.gz" \
+            -o "$RUNNER_TEMP/tools/aotopsy.tar.gz"
+          echo "a16d5c9f79f34a4cdff5565128f58d0d97d7b1de058b395358f77dfff817ba45  $RUNNER_TEMP/tools/aotopsy.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/tools/aotopsy"
+          tar -xzf "$RUNNER_TEMP/tools/aotopsy.tar.gz" -C "$RUNNER_TEMP/tools/aotopsy"
+          AOT="$(find "$RUNNER_TEMP/tools/aotopsy" -name aotopsy -type f -perm -111 -print -quit)"
+          echo "AOTOPSY_BIN=$AOT" >> "$GITHUB_ENV"
+
+      - name: Inspect reconstructed source, names, function graph and xrefs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re,pathlib,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"recovered"
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"review"
+          app=root/"aotopsy/reconstructed-app/app/app.dart"
+          src=app.read_text(errors="replace")
+          keywords=re.compile(r"carbon|soil|soc|sample|storage|sqlite|depth|density|calculat|layer|organic|bulk|mass|project|result|export|import|database",re.I)
+          classes=list(re.finditer(r"(?m)^\s*(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)",src))
+          decls=list(re.finditer(r"(?m)^\s*(?:static\s+)?(?:external\s+)?(?:[\w$<>?,. ]+)\s+([A-Za-z_$][\w$]*)\s*\(",src))
+          counts={
+            "source_path":str(app.relative_to(root)),
+            "bytes":len(src.encode()),
+            "lines":src.count("\n")+1,
+            "classes":len(classes),
+            "method_like_declarations":len(decls),
+            "unknown_markers":{x:len(re.findall(re.escape(x),src)) for x in ["<unknown>","dynamicCall","indirectCall","stub_","sub_","local_"]},
+            "domain_keyword_counts":{k:len(re.findall(k,src,re.I)) for k in ["carbon","soil","soc","sample","storage","sqlite","depth","density","calculate","layer","organic","bulk","mass"]}
+          }
+          (out/"source-metrics.json").write_text(json.dumps(counts,indent=2)+"\n")
+          lines=src.splitlines()
+          snippets=[]; seen=set()
+          for i,line in enumerate(lines):
+            if keywords.search(line):
+              lo=max(0,i-8); hi=min(len(lines),i+18)
+              block="\n".join(f"{n+1}: {lines[n]}" for n in range(lo,hi))
+              if block not in seen:
+                seen.add(block); snippets.append((i+1,block))
+          report=["# Recovered Dart source — focused review","",f"- Source: {app.relative_to(root)}",f"- {counts['lines']} lines / {counts['bytes']} bytes",f"- {counts['classes']} class declarations / {counts['method_like_declarations']} method-like declarations","","## Class names",""]
+          report += [f"- {m.group(1)} (line {src[:m.start()].count(chr(10))+1})" for m in classes[:500]]
+          report += ["","## Domain-related source windows",""]
+          report += [f"### Around line {line}\n\n    "+block.replace("\n","\n    ") for line,block in snippets[:100]]
+          (out/"recovered-source-review.md").write_text("\n".join(report)+"\n")
+          print(json.dumps(counts,indent=2))
+          print("CLASS_NAMES="+", ".join(m.group(1) for m in classes[:200]))
+          print("DOMAIN_WINDOWS="+str(len(snippets)))
+          PY
+          python3 - <<'PY'
+          import json,re,pathlib,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"recovered/aotopsy/full-pipeline"
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"review"
+          terms=re.compile(r"carbon|soil|soc|sample|storage|sqlite|depth|density|calculat|layer|organic|bulk|mass|database|project|result",re.I)
+          for name in ["functions.jsonl","call_edges.jsonl","classes.jsonl","string_refs.jsonl","dispatch_table.jsonl"]:
+            p=root/name
+            if not p.exists(): continue
+            hits=[]; first=[]
+            with p.open(errors="replace") as f:
+              for line in f:
+                try: obj=json.loads(line)
+                except Exception: continue
+                if len(first)<3:first.append(obj)
+                if terms.search(json.dumps(obj,ensure_ascii=False)):
+                  hits.append(obj)
+                  if len(hits)>=500: break
+            (out/(name+".first-records.json")).write_text(json.dumps(first,ensure_ascii=False,indent=2)+"\n")
+            (out/(name+".domain-hits.json")).write_text(json.dumps(hits,ensure_ascii=False,indent=2)+"\n")
+            print(name,"first_keys=",list(first[0].keys()) if first and isinstance(first[0],dict) else None,"domain_hits=",len(hits))
+            if hits: print("SAMPLE_HIT",json.dumps(hits[0],ensure_ascii=False)[:1200])
+          PY
+          for f in "$RUNNER_TEMP/recovered/logs/aotopsy-doctor.stderr" "$RUNNER_TEMP/recovered/aotopsy/doctor.stdout" "$RUNNER_TEMP/recovered/logs/aotopsy-decompile-from-main.stderr" "$RUNNER_TEMP/recovered/logs/aotopsy-decompile-from-main.exit" "$RUNNER_TEMP/recovered/aotopsy/strings-carbon-xref.stdout" "$RUNNER_TEMP/recovered/aotopsy/strings-sqlite-xref.stdout" "$RUNNER_TEMP/recovered/aotopsy/fingerprint.stdout"; do
+            if [ -f "$f" ]; then
+              echo "===== $f ====="
+              sed -n '1,180p' "$f"
+            fi
+          done | tee "$RUNNER_TEMP/review/tool-diagnostics.txt"
+
+      - name: Run focused Dart function decompilation for app-specific names
+        shell: bash
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/review/targeted"
+          mkdir -p "$OUT"
+          for needle in Soc Sample sample; do
+            set +e
+            timeout 300 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --find "$needle" > "$OUT/find-$needle.stdout" 2> "$OUT/find-$needle.stderr"
+            echo "$?" > "$OUT/find-$needle.exit"
+            set -e
+          done
+          for needle in carbonStorage sqlite3_column_bytes; do
+            set +e
+            timeout 180 "$AOTOPSY_BIN" _debug strings --lib "$SOC_LIBAPP" --find "$needle" --xref > "$OUT/xref-$needle.stdout" 2> "$OUT/xref-$needle.stderr"
+            echo "$?" > "$OUT/xref-$needle.exit"
+            set -e
+          done
+          true
+
+      - name: Build final review summary and publish
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,pathlib,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"review"
+          report=["# SOC reconstructed-source deep review",""]
+          p=root/"source-metrics.json"
+          if p.exists():
+            m=json.loads(p.read_text())
+            report += [f"- Recovered Dart: {m['lines']} lines / {m['bytes']} bytes",f"- Classes: {m['classes']}",f"- Method-like declarations: {m['method_like_declarations']}","- Unknown markers: "+json.dumps(m["unknown_markers"],ensure_ascii=False),"- Domain token counts: "+json.dumps(m["domain_keyword_counts"],ensure_ascii=False)]
+          report += ["","## Function and class cross-reference hits",""]
+          for name in ["functions.jsonl","classes.jsonl","string_refs.jsonl","call_edges.jsonl","dispatch_table.jsonl"]:
+            q=root/(name+".domain-hits.json")
+            if q.exists():
+              data=json.loads(q.read_text())
+              report.append(f"- {name}: {len(data)} matching records (bounded to 500)")
+              for row in data[:12]: report.append("  - "+json.dumps(row,ensure_ascii=False)[:700])
+          (root/"deep-review-summary.md").write_text("\n".join(report)+"\n")
+          print((root/"deep-review-summary.md").read_text()[:18000])
+          PY
+          if [ -f "$RUNNER_TEMP/review/deep-review-summary.md" ]; then cat "$RUNNER_TEMP/review/deep-review-summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Upload source reconstruction review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-source-deep-review-20261123
+          path: \${{ runner.temp }}/review/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
