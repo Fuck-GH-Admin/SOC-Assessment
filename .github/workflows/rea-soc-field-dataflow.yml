@@ -1,0 +1,152 @@
+name: SOC business field dataflow and Dart dispatch resolution
+on:
+  push:
+    branches:
+      - experiment/rea-soc-field-dataflow-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  field-dataflow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Download and verify the exact SOC binary and AOTopsy analysis snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/target" "$RUNNER_TEMP/tools" "$RUNNER_TEMP/full" "$RUNNER_TEMP/out/functions" "$RUNNER_TEMP/out/logs"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14771559896/zip" -o "$RUNNER_TEMP/target.zip"
+          echo "7b50a68e9f5fe388845a806419baf71e3ba5138bb3ad0a6da0d91fb6f12cc8c3  $RUNNER_TEMP/target.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/target.zip" -d "$RUNNER_TEMP/target/archive"
+          inner="$(find "$RUNNER_TEMP/target/archive" -name soc-shield-linux-x64.tar.gz -print -quit)"
+          test -n "$inner"
+          tar -xzf "$inner" -C "$RUNNER_TEMP/target"
+          LIBAPP="$(find "$RUNNER_TEMP/target" -name libapp.so -print -quit)"
+          echo "3c42c61436618aeec58473c434c7f3908ea15a05b6c0267a13b56327d01d30c8  $LIBAPP" | sha256sum --check -
+          echo "SOC_LIBAPP=$LIBAPP" >> "$GITHUB_ENV"
+          curl --fail --location --retry 4 "https://github.com/BroNils/aotopsy/releases/download/v1.6.0/aotopsy_v1.6.0_linux_amd64.tar.gz" -o "$RUNNER_TEMP/tools/aotopsy.tar.gz"
+          echo "a16d5c9f79f34a4cdff5565128f58d0d97d7b1de058b395358f77dfff817ba45  $RUNNER_TEMP/tools/aotopsy.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/tools/aotopsy"
+          tar -xzf "$RUNNER_TEMP/tools/aotopsy.tar.gz" -C "$RUNNER_TEMP/tools/aotopsy"
+          AOT="$(find "$RUNNER_TEMP/tools/aotopsy" -name aotopsy -type f -perm -111 -print -quit)"
+          echo "AOTOPSY_BIN=$AOT" >> "$GITHUB_ENV"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" -o "$RUNNER_TEMP/full.zip"
+          echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/full.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/full.zip" -d "$RUNNER_TEMP/full"
+          "$AOT" --version > "$RUNNER_TEMP/out/logs/aotopsy-version.txt" 2>&1 || true
+
+      - name: Re-decompile business candidates with a larger emitter budget
+        shell: bash
+        run: |
+          set -uo pipefail
+          targets="0x5ad860 0x5ae4dc 0x5ae6d4 0x5ae8dc 0x5afa30 0x5b0750 0x5b0eb0 0x5b13a0 0x5b1f04 0x5b300c 0x5de74c 0x5df4c4 0x5e4368 0x5ee61c 0x5eee50 0x5f203c 0x5f2cc0 0x5f6094 0x7d969c 0x7da31c"
+          for addr in $targets; do
+            safe="$(printf '%s' "$addr" | tr -cd '[:alnum:]x')"
+            set +e
+            timeout --signal=TERM --kill-after=20s 240 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --func "$addr" --max-steps 20000 > "$RUNNER_TEMP/out/functions/$safe.stdout" 2> "$RUNNER_TEMP/out/logs/$safe.stderr"
+            rc=$?
+            set -e
+            echo "$rc" > "$RUNNER_TEMP/out/logs/$safe.exit"
+            echo "decompile $addr exit=$rc"
+          done
+          set +e
+          timeout --signal=TERM --kill-after=30s 1200 "$AOTOPSY_BIN" _debug dispatch-table --lib "$SOC_LIBAPP" --all > "$RUNNER_TEMP/out/dispatch-table.stdout" 2> "$RUNNER_TEMP/out/logs/dispatch-table.stderr"
+          rc=$?
+          set -e
+          echo "$rc" > "$RUNNER_TEMP/out/logs/dispatch-table.exit"
+          echo "dispatch-table exit=$rc"
+
+      - name: Correlate class fields, dynamic calls, and dispatch candidates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,os,json,re,collections
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          full=base/"full"; out=base/"out"
+          def readj(p):
+            rows=[]
+            if not p or not p.exists(): return rows
+            with p.open(errors="replace") as f:
+              for line in f:
+                try: rows.append(json.loads(line))
+                except Exception: pass
+            return rows
+          def findfile(name,root=full):
+            return next((p for p in root.rglob(name) if p.is_file()),None)
+          fp=findfile("functions.jsonl")
+          if not fp: raise SystemExit("functions.jsonl missing from verified AOTopsy artifact")
+          funcs=readj(fp); edges=readj(findfile("call_edges.jsonl")); fields=readj(findfile("field_accessor_xref.jsonl"))
+          classes=readj(findfile("classes.jsonl")); dispatch=readj(findfile("dispatch_table.jsonl")); typetrack=findfile("typetrack_report.json")
+          bypc={str(x.get("pc","")).lower():x for x in funcs}
+          target_pcs=["0x5ad860","0x5ae4dc","0x5ae6d4","0x5ae8dc","0x5afa30","0x5b0750","0x5b0eb0","0x5b13a0","0x5b1f04","0x5b300c","0x5de74c","0x5df4c4","0x5e4368","0x5ee61c","0x5eee50","0x5f203c","0x5f2cc0","0x5f6094","0x7d969c","0x7da31c"]
+          report=["# SOC field dataflow and dynamic dispatch cross-check","","## Snapshot integrity and schemas",f"- functions: {len(funcs)}",f"- call edges: {len(edges)}",f"- field accessor rows: {len(fields)}",f"- class records: {len(classes)}",f"- dispatch rows: {len(dispatch)}"]
+          report.append("function schema: "+json.dumps(funcs[0] if funcs else {},ensure_ascii=False))
+          report.append("call-edge schema: "+json.dumps(edges[0] if edges else {},ensure_ascii=False))
+          report.append("field-xref schema: "+json.dumps(fields[0] if fields else {},ensure_ascii=False))
+          report.append("class schema: "+json.dumps(classes[0] if classes else {},ensure_ascii=False))
+          report.append("dispatch schema: "+json.dumps(dispatch[0] if dispatch else {},ensure_ascii=False))
+          if typetrack: report += ["","## Type inference report",typetrack.read_text(errors="replace")[:18000]]
+          report += ["","## Candidate function identity, field access and call-edge dataflow"]
+          for pc in target_pcs:
+            f=bypc.get(pc,{})
+            name=str(f.get("name",""))
+            if not name: continue
+            owned=[x for x in fields if name in x.get("readers",[]) or name in x.get("writers",[])]
+            report += [f"### {pc} {name} owner={f.get('owner')} size={f.get('size')} field_xrefs={len(owned)}"]
+            for x in owned[:100]: report.append("FIELD "+json.dumps(x,ensure_ascii=False))
+            calls=[e for e in edges if e.get("from_func")==name]
+            counts=collections.Counter(e.get("kind","") for e in calls)
+            report.append(f"CALLS total={len(calls)} kinds={dict(counts)}")
+            for e in calls[:80]: report.append("CALL "+json.dumps(e,ensure_ascii=False))
+          table=(out/"dispatch-table.stdout").read_text(errors="replace") if (out/"dispatch-table.stdout").exists() else ""
+          slot_names={}
+          for m in re.finditer(r'dispatch\[(\d+)\]\s+kind=(\w+)\s+name="([^"]*)"',table):
+            slot_names[int(m.group(1))]=(m.group(2),m.group(3))
+          report += ["","## Dispatch table name coverage",f"- parsed named table entries: {len(slot_names)}"]
+          selector_sites=collections.defaultdict(list)
+          for p in sorted((out/"functions").glob("*.stdout")):
+            src=p.read_text(errors="replace")
+            for sel in re.findall(r"dispatchCall\s*\(\s*selector\s*:\s*(\d+)",src):
+              selector_sites[int(sel)].append(p.stem)
+          report += ["","## Selector-to-candidate mapping (unfiltered CHA candidates)"]
+          report.append("Formula: candidate_class_id = dispatch_table_index - decompiler_selector_offset; only code slots with a known class ID are retained.")
+          class_ids=set(); class_name={}
+          for c in classes:
+            cid=c.get("class_id",c.get("cid"))
+            if isinstance(cid,int):
+              class_ids.add(cid); class_name[cid]=str(c.get("name",c.get("class_name","")))
+          for selector,owners in sorted(selector_sites.items()):
+            candidates=[]
+            for index,(kind,name) in slot_names.items():
+              cid=index-selector
+              if kind=="code" and cid>=0 and (not class_ids or cid in class_ids):
+                candidates.append({"class_id":cid,"class_name":class_name.get(cid,""),"slot":index,"target":name})
+            report.append(f"### selector_offset={selector}: sites={len(owners)} owners={sorted(set(owners))} candidate_count={len(candidates)}")
+            for x in candidates[:100]: report.append(json.dumps(x,ensure_ascii=False))
+          report += ["","## Higher-budget decompilation outputs"]
+          for p in sorted((out/"functions").glob("*.stdout")):
+            src=p.read_text(errors="replace"); cfg=re.findall(r"CFG verification:[^\n]+",src)
+            stats=(out/"logs"/(p.stem+".stderr")).read_text(errors="replace") if (out/"logs"/(p.stem+".stderr")).exists() else ""
+            report.append(f"### {p.stem}: bytes={len(src.encode())}, lines={src.count(chr(10))+1}, dispatch_calls={src.count('dispatchCall(')}, cfg={cfg}")
+            if stats.strip(): report.append("STATS "+stats[:1600].replace("\n"," | "))
+            report.append(src[:7500])
+          for p in sorted((out/"logs").glob("*.exit")): report.append(f"- {p.stem}: exit {p.read_text().strip()}")
+          (out/"soc-field-dataflow-report.md").write_text("\n".join(report)+"\n")
+          text=(out/"soc-field-dataflow-report.md").read_text()
+          print("REPORT_HEAD\n"+text[:12000]); print("REPORT_TAIL\n"+text[-80000:])
+          PY
+          cat "$RUNNER_TEMP/out/soc-field-dataflow-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SOC field dataflow and dispatch analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-field-dataflow-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
