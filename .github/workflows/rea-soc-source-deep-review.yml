@@ -121,18 +121,120 @@ jobs:
             fi
           done | tee "$RUNNER_TEMP/review/tool-diagnostics.txt"
 
+      - name: Map domain strings to AOT functions and build candidate addresses
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,re,pathlib,os,bisect
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"recovered/aotopsy/full-pipeline"
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"review"
+          def readj(name):
+            p=root/name
+            return [json.loads(x) for x in p.open(errors="replace") if x.strip()]
+          funcs=readj("functions.jsonl")
+          refs=readj("string_refs.jsonl")
+          terms=re.compile(r"carbonStorage|algorithmVersion|fert|erosion|depthLabel|soil|SOC|Sample|sample|mass|bd|计算参数|算法口径|施肥处理|侵蚀强度|当前土层|土壤容重|辅助观测|采样|样点|碳储量|碳密度",re.I)
+          starts=[]
+          for f in funcs:
+            try: starts.append((int(str(f.get("pc","0")),16),int(f.get("size",0)),f))
+            except Exception: pass
+          starts.sort(key=lambda x:x[0])
+          pcs=[x[0] for x in starts]
+          selected=[]; candidates={}
+          for r in refs:
+            value=str(r.get("value",""))
+            if not terms.search(value): continue
+            rec=dict(r)
+            try: pc=int(str(r.get("pc","0")),16)
+            except Exception: pc=0
+            i=bisect.bisect_right(pcs,pc)-1
+            owner=None
+            if i>=0:
+              s,sz,fn=starts[i]
+              if sz<=0 or pc<s+sz: owner=fn
+            rec["containing_function"]=owner
+            selected.append(rec)
+            if owner:
+              key=str(owner.get("pc"))
+              candidates[key]=owner
+          (out/"domain-string-refs.json").write_text(json.dumps(selected,ensure_ascii=False,indent=2)+"\n")
+          rows=sorted(candidates.values(),key=lambda x:int(str(x.get("pc","0")),16))
+          with (out/"function-candidates.tsv").open("w") as f:
+            for x in rows[:40]: f.write(f"{x.get('pc','')}\t{x.get('name','')}\t{x.get('size','')}\n")
+          print("DOMAIN_STRING_REFS",len(selected))
+          for r in selected[:120]:
+            print("STRING",r.get("pc"),r.get("func"),str(r.get("value",""))[:260])
+            if r.get("containing_function"): print("OWNER",json.dumps(r["containing_function"],ensure_ascii=False)[:500])
+          print("FUNCTION_CANDIDATES",len(rows))
+          print((out/"function-candidates.tsv").read_text())
+          PY
       - name: Run focused Dart function decompilation for app-specific names
         shell: bash
         run: |
           set -uo pipefail
           OUT="$RUNNER_TEMP/review/targeted"
           mkdir -p "$OUT"
-          for needle in Soc Sample sample; do
+          for addr in 0x7d969c 0x7da31c; do
             set +e
-            timeout 300 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --find "$needle" > "$OUT/find-$needle.stdout" 2> "$OUT/find-$needle.stderr"
-            echo "$?" > "$OUT/find-$needle.exit"
+            timeout 300 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --func "$addr" --out "$OUT/main-$addr" > "$OUT/main-$addr.stdout" 2> "$OUT/main-$addr.stderr"
+            echo "$?" > "$OUT/main-$addr.exit"
             set -e
           done
+          if [ -f "$RUNNER_TEMP/review/function-candidates.tsv" ]; then
+            n=0
+            while IFS=          for needle in carbonStorage sqlite3_column_bytes; do
+            set +e
+            timeout 180 "$AOTOPSY_BIN" _debug strings --lib "$SOC_LIBAPP" --find "$needle" --xref > "$OUT/xref-$needle.stdout" 2> "$OUT/xref-$needle.stderr"
+            echo "$?" > "$OUT/xref-$needle.exit"
+            set -e
+          done
+          true
+
+      - name: Build final review summary and publish
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,pathlib,os
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"review"
+          report=["# SOC reconstructed-source deep review",""]
+          p=root/"source-metrics.json"
+          if p.exists():
+            m=json.loads(p.read_text())
+            report += [f"- Recovered Dart: {m['lines']} lines / {m['bytes']} bytes",f"- Classes: {m['classes']}",f"- Method-like declarations: {m['method_like_declarations']}","- Unknown markers: "+json.dumps(m["unknown_markers"],ensure_ascii=False),"- Domain token counts: "+json.dumps(m["domain_keyword_counts"],ensure_ascii=False)]
+          report += ["","## Function and class cross-reference hits",""]
+          for name in ["functions.jsonl","classes.jsonl","string_refs.jsonl","call_edges.jsonl","dispatch_table.jsonl"]:
+            q=root/(name+".domain-hits.json")
+            if q.exists():
+              data=json.loads(q.read_text())
+              report.append(f"- {name}: {len(data)} matching records (bounded to 500)")
+              for row in data[:12]: report.append("  - "+json.dumps(row,ensure_ascii=False)[:700])
+          (root/"deep-review-summary.md").write_text("\n".join(report)+"\n")
+          print((root/"deep-review-summary.md").read_text()[:18000])
+          PY
+          if [ -f "$RUNNER_TEMP/review/deep-review-summary.md" ]; then cat "$RUNNER_TEMP/review/deep-review-summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Upload source reconstruction review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-source-deep-review-20261123
+          path: ${{ runner.temp }}/review/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
+\t' read -r addr name size; do
+              [ -n "$addr" ] || continue
+              n=$((n+1))
+              [ "$n" -le 25 ] || break
+              safe="$(echo "$addr" | tr -cd '[:alnum:]x')"
+              set +e
+              timeout 180 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --func "$addr" --out "$OUT/candidate-$safe" > "$OUT/candidate-$safe.stdout" 2> "$OUT/candidate-$safe.stderr"
+              echo "$?" > "$OUT/candidate-$safe.exit"
+              set -e
+            done < "$RUNNER_TEMP/review/function-candidates.tsv"
+          fi
           for needle in carbonStorage sqlite3_column_bytes; do
             set +e
             timeout 180 "$AOTOPSY_BIN" _debug strings --lib "$SOC_LIBAPP" --find "$needle" --xref > "$OUT/xref-$needle.stdout" 2> "$OUT/xref-$needle.stderr"
@@ -170,7 +272,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: rea-soc-source-deep-review-20261123
-          path: \${{ runner.temp }}/review/
+          path: ${{ runner.temp }}/review/
           if-no-files-found: warn
           compression-level: 0
           retention-days: 14
