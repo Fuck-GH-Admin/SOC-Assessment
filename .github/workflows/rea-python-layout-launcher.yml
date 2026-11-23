@@ -1,0 +1,160 @@
+name: REA Python provider and unpacked Flutter launcher analysis
+on:
+  push:
+    branches:
+      - experiment/rea-python-layout-launcher-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  launcher-and-layout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - name: Download and verify target and REA offline kit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/kit" "$RUNNER_TEMP/target" "$RUNNER_TEMP/out"/{rea,logs}
+          base="https://github.com/Fuck-GH-Admin/rea/releases/download/rea-offline-kit-20261123"
+          for n in 001 002 003 004; do
+            curl --fail --location --retry 4 --retry-all-errors "$base/REA-Offline-Kit-20261123-public.tar.gz.part-$n" -o "$RUNNER_TEMP/kit/part-$n"
+          done
+          cat "$RUNNER_TEMP/kit"/part-* > "$RUNNER_TEMP/kit/offline-kit.tar.gz"
+          echo "997e960ce9704356f4ca43a4ae40c0a0aa63fb7c90364ad1a637ed0efceffcf7  $RUNNER_TEMP/kit/offline-kit.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/kit/extracted"
+          tar -xzf "$RUNNER_TEMP/kit/offline-kit.tar.gz" -C "$RUNNER_TEMP/kit/extracted"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14771559896/zip" -o "$RUNNER_TEMP/target.zip"
+          echo "7b50a68e9f5fe388845a806419baf71e3ba5138bb3ad0a6da0d91fb6f12cc8c3  $RUNNER_TEMP/target.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/target.zip" -d "$RUNNER_TEMP/target/archive"
+          inner="$(find "$RUNNER_TEMP/target/archive" -name soc-shield-linux-x64.tar.gz -print -quit)"
+          tar -xzf "$inner" -C "$RUNNER_TEMP/target"
+          echo "SOC_LAUNCHER=$(find "$RUNNER_TEMP/target" -name soc_app -print -quit)" >> "$GITHUB_ENV"
+          echo "SOC_LIBAPP=$(find "$RUNNER_TEMP/target" -name libapp.so -print -quit)" >> "$GITHUB_ENV"
+
+      - name: Extract REA and install its caller-supplied Python ELF provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          KIT="$RUNNER_TEMP/kit/extracted"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd python3-venv
+          NODE_TAR="$(find "$KIT" -type f -name 'node-v24.22.1-linux-x64.tar.xz' -print -quit)"
+          REA_TAR="$(find "$KIT" -type f -name 'rea-fork-54906fd-linux-x64-offline.tar.zst' -print -quit)"
+          GHIDRA_ZIP="$(find "$KIT" -type f -name 'ghidra_12.1.4_PUBLIC_20260921.zip' -print -quit)"
+          UPX_TAR="$(find "$KIT" -type f -name 'upx-5.3.0-amd64_linux.tar.xz' -print -quit)"
+          test -n "$NODE_TAR" && test -n "$REA_TAR" && test -n "$GHIDRA_ZIP" && test -n "$UPX_TAR"
+          mkdir -p "$KIT/node" "$KIT/rea" "$KIT/ghidra" "$KIT/upx"
+          tar -xJf "$NODE_TAR" -C "$KIT/node"
+          tar --zstd -xf "$REA_TAR" -C "$KIT/rea"
+          unzip -q "$GHIDRA_ZIP" -d "$KIT/ghidra"
+          tar -xJf "$UPX_TAR" -C "$KIT/upx"
+          NODE_BIN="$(find "$KIT/node" -type f -path '*/bin/node' -print -quit)"
+          REA_ENTRY="$(find "$KIT/rea" -type f -path '*/scripts/rea.mjs' -print -quit)"
+          GHIDRA_HEADLESS="$(find "$KIT/ghidra" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          UPX_BIN="$(find "$KIT/upx" -type f -name upx -perm -111 -print -quit)"
+          NODE_ROOT="$(dirname "$(dirname "$NODE_BIN")")"
+          REA_ROOT="$(dirname "$(dirname "$REA_ENTRY")")"
+          GHIDRA_ROOT="$(dirname "$(dirname "$GHIDRA_HEADLESS")")"
+          python3 -m venv "$RUNNER_TEMP/pwn-venv"
+          "$RUNNER_TEMP/pwn-venv/bin/pip" install --disable-pip-version-check "pwntools==4.15.0" "pyelftools==0.33" "unicorn==2.1.2"
+          "$RUNNER_TEMP/pwn-venv/bin/python" - <<'PY'
+          import pwn,elftools,unicorn
+          print("pwntools",pwn.version)
+          print("pyelftools",elftools.__version__)
+          print("unicorn",unicorn.__version__)
+          PY
+          {
+            echo "REA_NODE=$NODE_BIN"
+            echo "REA_ENTRY=$REA_ENTRY"
+            echo "GHIDRA_INSTALL_DIR=$GHIDRA_ROOT"
+            echo "REA_PWNTOOLS_PYTHON=$RUNNER_TEMP/pwn-venv/bin/python"
+            echo "REA_UPX_BIN=$UPX_BIN"
+            echo "PATH=$NODE_ROOT/bin:$REA_ROOT/node_modules/.bin:$PATH"
+            echo "GHIDRA_HEADLESS_MAXMEM=4096M"
+            echo "REA_GHIDRA_STARTUP_TIMEOUT_MS=1800000"
+            echo "REA_GHIDRA_DECOMPILE_TIMEOUT_SECONDS=900"
+            echo "JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=3"
+          } >> "$GITHUB_ENV"
+          export PATH="$NODE_ROOT/bin:$REA_ROOT/node_modules/.bin:$PATH"
+          export GHIDRA_INSTALL_DIR="$GHIDRA_ROOT"
+          export REA_PWNTOOLS_PYTHON="$RUNNER_TEMP/pwn-venv/bin/python"
+          "$NODE_BIN" "$REA_ENTRY" doctor --provider ghidra --json > "$RUNNER_TEMP/out/rea/doctor.json" 2> "$RUNNER_TEMP/out/logs/doctor.stderr"
+          cat "$RUNNER_TEMP/out/rea/doctor.json"
+
+      - name: Unpack launcher copy and inspect ELF layouts with REA
+        shell: bash
+        run: |
+          set -uo pipefail
+          cp "$SOC_LAUNCHER" "$RUNNER_TEMP/target/soc_app.copy"
+          "$REA_UPX_BIN" -t "$RUNNER_TEMP/target/soc_app.copy" > "$RUNNER_TEMP/out/logs/upx-test.txt" 2>&1
+          "$REA_UPX_BIN" -d "$RUNNER_TEMP/target/soc_app.copy" -o "$RUNNER_TEMP/target/soc_app.unpacked" > "$RUNNER_TEMP/out/logs/upx-decompress.txt" 2>&1
+          sha256sum "$SOC_LAUNCHER" "$SOC_LIBAPP" "$RUNNER_TEMP/target/soc_app.unpacked" > "$RUNNER_TEMP/out/logs/target-hashes.txt"
+          run_rea() {
+            local name="$1"; shift
+            set +e
+            timeout --signal=TERM --kill-after=30s 1500 "$@" > "$RUNNER_TEMP/out/rea/$name.json" 2> "$RUNNER_TEMP/out/logs/$name.stderr"
+            local rc=$?
+            set -e
+            echo "$rc" > "$RUNNER_TEMP/out/logs/$name.exit"
+            echo "$name exit=$rc"
+          }
+          run_rea libapp-layout "$REA_NODE" "$REA_ENTRY" inspect-binary-layout "$SOC_LIBAPP" --json
+          run_rea launcher-layout "$REA_NODE" "$REA_ENTRY" inspect-binary-layout "$SOC_LAUNCHER" --json
+          run_rea unpacked-launcher-layout "$REA_NODE" "$REA_ENTRY" inspect-binary-layout "$RUNNER_TEMP/target/soc_app.unpacked" --json
+          run_rea unpacked-launcher-inspect "$REA_NODE" "$REA_ENTRY" inspect "$RUNNER_TEMP/target/soc_app.unpacked" --provider ghidra --json --timings
+
+      - name: Use REA to resolve native launcher procedures and test Dart instruction coordinates
+        shell: bash
+        run: |
+          set -uo pipefail
+          run_rea() {
+            local name="$1"; shift
+            set +e
+            timeout --signal=TERM --kill-after=30s 1500 "$@" > "$RUNNER_TEMP/out/rea/$name.json" 2> "$RUNNER_TEMP/out/logs/$name.stderr"
+            local rc=$?
+            set -e
+            echo "$rc" > "$RUNNER_TEMP/out/logs/$name.exit"
+            echo "$name exit=$rc"
+          }
+          run_rea launcher-procedures-all "$REA_NODE" "$REA_ENTRY" search "$RUNNER_TEMP/target/soc_app.unpacked" "." --kind procedures --mode regex --provider ghidra --json
+          run_rea launcher-procedures-main "$REA_NODE" "$REA_ENTRY" search "$RUNNER_TEMP/target/soc_app.unpacked" "main" --kind procedures --provider ghidra --json
+          run_rea launcher-procedures-flutter "$REA_NODE" "$REA_ENTRY" search "$RUNNER_TEMP/target/soc_app.unpacked" "flutter|engine|libapp|gtk" --kind procedures --mode regex --provider ghidra --json
+          run_rea launcher-main-function "$REA_NODE" "$REA_ENTRY" function "$RUNNER_TEMP/target/soc_app.unpacked" "main" --provider ghidra --json
+          run_rea launcher-main-decompile "$REA_NODE" "$REA_ENTRY" decompile "$RUNNER_TEMP/target/soc_app.unpacked" "main" --provider ghidra --json
+          run_rea dart-instructions-density "$REA_NODE" "$REA_ENTRY" instructions "$SOC_LIBAPP" 0x5de74c --provider ghidra --json
+          run_rea dart-instructions-results "$REA_NODE" "$REA_ENTRY" instructions "$SOC_LIBAPP" 0x5f203c --provider ghidra --json
+          true
+
+      - name: Summarize provider-backed evidence
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib,os,json
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"out"
+          report=["# REA Python ELF provider and launcher analysis","","The original binaries were read-only; UPX unpacking used a copy.",""]
+          for p in sorted((root/"rea").glob("*.json")):
+            try: obj=json.loads(p.read_text(errors="replace"))
+            except Exception: obj={"raw":p.read_text(errors="replace")[:4000]}
+            report += [f"## {p.name}",json.dumps(obj,ensure_ascii=False,indent=2)[:10000],""]
+          for p in sorted((root/"logs").glob("*.exit")):
+            report.append(f"- {p.stem}: exit {p.read_text().strip()}")
+            e=root/"logs"/(p.stem+".stderr")
+            if e.exists() and e.stat().st_size: report.append("  "+e.read_text(errors="replace")[:2000].replace("\n"," | "))
+          (root/"rea-python-layout-launcher-report.md").write_text("\n".join(report)+"\n")
+          print((root/"rea-python-layout-launcher-report.md").read_text()[:70000])
+          PY
+          cat "$RUNNER_TEMP/out/rea-python-layout-launcher-report.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload REA Python provider and launcher analysis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-python-layout-launcher-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
