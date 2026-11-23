@@ -135,7 +135,9 @@ jobs:
           (out/"pseudocode-callgraph-review.md").write_text("\n".join(report)+"\n")
           (out/"function-metrics.json").write_text(json.dumps(allmetrics,ensure_ascii=False,indent=2)+"\n")
           print("FUNCTION_METRICS",json.dumps(allmetrics,ensure_ascii=False))
-          print((out/"pseudocode-callgraph-review.md").read_text()[:100000])
+          text=(out/"pseudocode-callgraph-review.md").read_text()
+          print("REPORT_HEAD\n"+text[:12000])
+          print("REPORT_TAIL\n"+text[-80000:])
           PY
 
       - name: Publish summary
