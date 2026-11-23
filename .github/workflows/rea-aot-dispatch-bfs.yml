@@ -67,19 +67,33 @@ jobs:
           report += ["","## Incoming and outgoing direct calls for business candidates"]
           for pc,name in target_names.items():
             if not name: continue
-            incoming=[e for e in edges if e.get("kind")=="call" and e.get("target")==name]
+            incoming=[e for e in edges if name in edge_targets(e)]
             outgoing=[e for e in edges if e.get("from_func")==name]
             report.append(f"### {pc} {name}")
-            report.append(f"incoming_direct={len(incoming)} outgoing={len(outgoing)}")
+            report.append(f"incoming_resolved={len(incoming)} outgoing={len(outgoing)}")
             report += ["IN "+json.dumps(x,ensure_ascii=False) for x in incoming[:35]]
             report += ["OUT "+json.dumps(x,ensure_ascii=False) for x in outgoing[:35]]
           # Build a conservative direct-call graph and test both candidate roots.
           adjacency=collections.defaultdict(set)
           reverse=collections.defaultdict(set)
+          def edge_targets(e):
+            vals=[]
+            v=e.get("target")
+            if isinstance(v,str): vals.append(v)
+            for key in ["targets","target_names","resolved_targets","candidate_targets","callees","callee_names"]:
+              v=e.get(key)
+              if isinstance(v,str): vals.append(v)
+              elif isinstance(v,list):
+                for item in v:
+                  if isinstance(item,str): vals.append(item)
+                  elif isinstance(item,dict):
+                    for k in ["name","func","target","callee"]: 
+                      if isinstance(item.get(k),str): vals.append(item[k])
+            return sorted(set(x for x in vals if x in by_name))
           for e in edges:
-            if e.get("kind")!="call": continue
-            src=str(e.get("from_func","")); dst=str(e.get("target",""))
-            if src in by_name and dst in by_name:
+            src=str(e.get("from_func",""))
+            if src not in by_name: continue
+            for dst in edge_targets(e):
               adjacency[src].add(dst); reverse[dst].add(src)
           main_roots={}
           for pc in ["0x7d969c","0x7da31c"]:
@@ -104,6 +118,44 @@ jobs:
                   if own: interesting.append((n,pcx,[str(x.get("value","")) for x in own[:8]]))
             for n,pcx,vals in interesting[:120]:
               report.append(f"- {n} {pcx}: {vals}")
+          # Summarize the type-inference stage and field-level cross references.
+          for name in ["typetrack_report.json","type_inference.json","field_accessor_xref.jsonl","selector_dispatch_xref.jsonl"]:
+            for p in pipe.parent.rglob(name):
+              if p.suffix==".json":
+                report += [f"## {name}",p.read_text(errors="replace")[:18000]]
+              else:
+                rows=read_jsonl(p)
+                report += [f"## {name} records={len(rows)}",json.dumps(rows[0] if rows else {},ensure_ascii=False)]
+                pat=re.compile(r"soc|soil|carbon|fert|erosion|depth|bulk|density|crop|litter|straw|biomass|sample|layer",re.I)
+                hits=[x for x in rows if pat.search(json.dumps(x,ensure_ascii=False))]
+                report.append(f"high-signal field/xref rows={len(hits)}")
+                report += [json.dumps(x,ensure_ascii=False) for x in hits[:180]]
+          classes_path=pipe.parent/"classes.jsonl"
+          if classes_path.exists():
+            classes=read_jsonl(classes_path)
+            pat=re.compile(r"soc|soil|carbon|fert|erosion|depth|bulk|density|crop|litter|straw|biomass|sample|layer",re.I)
+            hits=[x for x in classes if pat.search(json.dumps(x,ensure_ascii=False))]
+            report += ["","## Business-related class layouts",f"classes={len(classes)}; high_signal={len(hits)}"]
+            report += [json.dumps(x,ensure_ascii=False)[:5000] for x in hits[:100]]
+          # Compare direct-only vs all resolved call edges from each main candidate.
+          for pc in ["0x7d969c","0x7da31c"]:
+            name=str(by_pc.get(pc,{}).get("name",""))
+            direct_seen=set(); q=[name] if name else []
+            while q:
+              n=q.pop()
+              if n in direct_seen: continue
+              direct_seen.add(n)
+              for e in edges:
+                if e.get("kind")=="call" and e.get("from_func")==n:
+                  q.extend(set(edge_targets(e))-direct_seen)
+            all_seen=set(); q=[name] if name else []
+            while q:
+              n=q.pop()
+              if n in all_seen: continue
+              all_seen.add(n)
+              for dst in adjacency.get(n,set())-all_seen: q.append(dst)
+            reached=[addr for addr,nm in target_names.items() if nm in all_seen]
+            report.append(f"CALLGRAPH ROOT {pc} {name}: direct_reachable={len(direct_seen)} all_resolved_reachable={len(all_seen)} business_targets={reached}")
           # String references to business concepts and their owning function.
           pattern=re.compile(r"carbonStorage|carbonDensity|netChange|recoveryRate|lossRate|algorithmVersion|cropBiomass|soilLayers|socValue|strawCarbonRatio|litterCarbonInput|sqlite3_|SOC 计算|土壤容重|SOC含量应|碳储量|碳密度|施肥处理|当前土层|侵蚀-SOC|侵蚀等级|没有找到施肥",re.I)
           high=[r for r in refs if pattern.search(str(r.get("value","")))]
