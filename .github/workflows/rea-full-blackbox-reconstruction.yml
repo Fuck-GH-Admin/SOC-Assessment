@@ -115,9 +115,23 @@ jobs:
             echo "REA_R2_BIN=$(find "$KIT/04-elf/radare2-root" \( -type f -o -type l \) -name r2 -print -quit)"
             echo "REA_CAPA_BIN=$(find "$KIT/04-elf/capa" -type f -name capa -perm -111 -print -quit)"
           } >> "$GITHUB_ENV"
+          export PATH="$NODE_ROOT/bin:$REA_ROOT/node_modules/.bin:$PATH"
+          export GHIDRA_INSTALL_DIR="$GHIDRA_ROOT"
+          export GHIDRA_HEADLESS_MAXMEM=4096M
+          export REA_GHIDRA_STARTUP_TIMEOUT_MS=1800000
+          export REA_GHIDRA_DECOMPILE_TIMEOUT_SECONDS=900
+          export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=3
+          java -version 2> "$RUNNER_TEMP/out/logs/java-version.txt" || true
+          test -x "$GHIDRA_HEADLESS"
           "$NODE_BIN" "$REA_ENTRY" --version | tee "$RUNNER_TEMP/out/logs/rea-version.txt"
+          set +e
           "$NODE_BIN" "$REA_ENTRY" doctor --provider ghidra --json > "$RUNNER_TEMP/out/rea/doctor-ghidra.json" 2> "$RUNNER_TEMP/out/logs/rea-doctor.stderr"
-          cat "$RUNNER_TEMP/out/rea/doctor-ghidra.json"
+          doctor_rc=$?
+          set -e
+          cat "$RUNNER_TEMP/out/rea/doctor-ghidra.json" || true
+          cat "$RUNNER_TEMP/out/logs/rea-doctor.stderr" || true
+          echo "$doctor_rc" > "$RUNNER_TEMP/out/logs/rea-doctor.exit"
+          test "$doctor_rc" -eq 0
           echo "REA and Ghidra doctor passed." | tee "$RUNNER_TEMP/out/logs/rea-doctor-status.txt"
 
       - name: Install AOTopsy 1.6.0 and verify release binary
