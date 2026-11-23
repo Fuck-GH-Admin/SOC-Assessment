@@ -1,0 +1,283 @@
+name: REA + AOTopsy full SOC black-box reconstruction
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  full-reconstruction:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - name: Prepare isolated output directories
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/rea-kit" "$RUNNER_TEMP/soc-artifact" "$RUNNER_TEMP/target" "$RUNNER_TEMP/tools" "$RUNNER_TEMP/out"/{rea,aotopsy,raw,logs,unpacked,inventory}
+          df -h "$RUNNER_TEMP" | tee "$RUNNER_TEMP/out/logs/runner-disk.txt"
+          free -h | tee "$RUNNER_TEMP/out/logs/runner-memory.txt"
+
+      - name: Download and verify the exact SOC build artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14771559896/zip"
+          curl --fail --location --retry 4 --retry-all-errors --connect-timeout 20 --max-time 900 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "$url" -o "$RUNNER_TEMP/soc-artifact.zip"
+          echo "7b50a68e9f5fe388845a806419baf71e3ba5138bb3ad0a6da0d91fb6f12cc8c3  $RUNNER_TEMP/soc-artifact.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/soc-artifact.zip" -d "$RUNNER_TEMP/soc-artifact"
+          find "$RUNNER_TEMP/soc-artifact" -maxdepth 3 -type f -printf '%P %s bytes\n' | sort | tee "$RUNNER_TEMP/out/inventory/artifact-files.txt"
+          inner="$(find "$RUNNER_TEMP/soc-artifact" -type f -name 'soc-shield-linux-x64.tar.gz' -print -quit)"
+          test -n "$inner"
+          checksum_file="$(find "$RUNNER_TEMP/soc-artifact" -type f \( -name 'SHA256SUMS' -o -name 'sha256sums.txt' \) -print -quit)"
+          if [ -n "$checksum_file" ]; then (cd "$(dirname "$checksum_file")" && sha256sum -c "$(basename "$checksum_file")"); fi
+          tar -xzf "$inner" -C "$RUNNER_TEMP/target"
+          launcher="$(find "$RUNNER_TEMP/target" -type f -name soc_app -print -quit)"
+          libapp="$(find "$RUNNER_TEMP/target" -type f -name libapp.so -print -quit)"
+          test -n "$launcher" && test -n "$libapp"
+          echo "eb9b74c1c08720af0528b598b30617f9f72db62337d2e9f541a8778ecb2f9f56  $launcher" | sha256sum --check -
+          echo "3c42c61436618aeec58473c434c7f3908ea15a05b6c0267a13b56327d01d30c8  $libapp" | sha256sum --check -
+          {
+            echo "SOC_LAUNCHER=$launcher"
+            echo "SOC_LIBAPP=$libapp"
+            echo "SOC_ROOT=$RUNNER_TEMP/target/SOC-Shield"
+          } >> "$GITHUB_ENV"
+          file "$launcher" "$libapp" | tee "$RUNNER_TEMP/out/inventory/primary-file-types.txt"
+          find "$RUNNER_TEMP/target/SOC-Shield" -type f -printf '%P\t%s\n' | sort > "$RUNNER_TEMP/out/inventory/all-files.tsv"
+
+      - name: Download and verify pinned REA offline kit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/rea-kit"
+          base="https://github.com/Fuck-GH-Admin/rea/releases/download/rea-offline-kit-20261123"
+          curl --fail --location --retry 4 --retry-all-errors "$base/REA-Offline-Kit-20261123-public.tar.gz.part-001" -o kit.part-001
+          curl --fail --location --retry 4 --retry-all-errors "$base/REA-Offline-Kit-20261123-public.tar.gz.part-002" -o kit.part-002
+          curl --fail --location --retry 4 --retry-all-errors "$base/REA-Offline-Kit-20261123-public.tar.gz.part-003" -o kit.part-003
+          curl --fail --location --retry 4 --retry-all-errors "$base/REA-Offline-Kit-20261123-public.tar.gz.part-004" -o kit.part-004
+          cat kit.part-001 kit.part-002 kit.part-003 kit.part-004 > kit.tar.gz
+          echo "997e960ce9704356f4ca43a4ae40c0a0aa63fb7c90364ad1a637ed0efceffcf7  kit.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/rea-kit/extracted"
+          tar -xzf kit.tar.gz -C "$RUNNER_TEMP/rea-kit/extracted"
+          manifest="$(find "$RUNNER_TEMP/rea-kit/extracted" -path '*/00-manifest/SHA256SUMS.txt' -print -quit)"
+          if [ -n "$manifest" ]; then
+            root="$(dirname "$(dirname "$manifest")")"
+            (cd "$root" && sha256sum -c 00-manifest/SHA256SUMS.txt)
+          fi
+          find "$RUNNER_TEMP/rea-kit/extracted" -type f \( -name node -o -name rea.mjs -o -name analyzeHeadless -o -name upx -o -name r2 -o -name capa \) -printf '%p\n' | tee "$RUNNER_TEMP/out/inventory/kit-tools.txt"
+
+      - name: Install REA runtime paths and verify Ghidra provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          KIT="$RUNNER_TEMP/rea-kit/extracted"
+          NODE_BIN="$(find "$KIT" -type f -path '*/bin/node' -print -quit)"
+          REA_ENTRY="$(find "$KIT" -type f -path '*/scripts/rea.mjs' -print -quit)"
+          GHIDRA_HEADLESS="$(find "$KIT" -type f -path '*/support/analyzeHeadless' -print -quit)"
+          test -x "$NODE_BIN" && test -f "$REA_ENTRY" && test -x "$GHIDRA_HEADLESS"
+          NODE_ROOT="$(dirname "$(dirname "$NODE_BIN")")"
+          REA_ROOT="$(dirname "$(dirname "$REA_ENTRY")")"
+          GHIDRA_ROOT="$(dirname "$(dirname "$GHIDRA_HEADLESS")")"
+          {
+            echo "PATH=$NODE_ROOT/bin:$REA_ROOT/node_modules/.bin:$PATH"
+            echo "REA_NODE=$NODE_BIN"
+            echo "REA_ENTRY=$REA_ENTRY"
+            echo "GHIDRA_INSTALL_DIR=$GHIDRA_ROOT"
+            echo "GHIDRA_HEADLESS_MAXMEM=3072M"
+            echo "REA_GHIDRA_STARTUP_TIMEOUT_MS=1800000"
+            echo "REA_GHIDRA_DECOMPILE_TIMEOUT_SECONDS=900"
+            echo "JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2"
+          } >> "$GITHUB_ENV"
+          "$NODE_BIN" "$REA_ENTRY" --version | tee "$RUNNER_TEMP/out/logs/rea-version.txt"
+          "$NODE_BIN" "$REA_ENTRY" doctor --provider ghidra --json > "$RUNNER_TEMP/out/rea/doctor-ghidra.json" 2> "$RUNNER_TEMP/out/logs/rea-doctor.stderr"
+          cat "$RUNNER_TEMP/out/rea/doctor-ghidra.json"
+          echo "REA and Ghidra doctor passed." | tee "$RUNNER_TEMP/out/logs/rea-doctor-status.txt"
+
+      - name: Install AOTopsy 1.6.0 and verify release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/tools"
+          url="https://github.com/BroNils/aotopsy/releases/download/v1.6.0/aotopsy_v1.6.0_linux_amd64.tar.gz"
+          curl --fail --location --retry 4 --retry-all-errors "$url" -o aotopsy.tar.gz
+          echo "a16d5c9f79f34a4cdff5565128f58d0d97d7b1de058b395358f77dfff817ba45  aotopsy.tar.gz" | sha256sum --check -
+          mkdir -p aotopsy
+          tar -xzf aotopsy.tar.gz -C aotopsy
+          AOTOPSY_BIN="$(find "$RUNNER_TEMP/tools/aotopsy" -type f -name aotopsy -perm -111 -print -quit)"
+          test -n "$AOTOPSY_BIN"
+          echo "AOTOPSY_BIN=$AOTOPSY_BIN" >> "$GITHUB_ENV"
+          "$AOTOPSY_BIN" --version 2>&1 | tee "$RUNNER_TEMP/out/logs/aotopsy-version.txt" || true
+
+      - name: Run REA static reverse-engineering workflows
+        shell: bash
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/out"
+          REA=("$REA_NODE" "$REA_ENTRY")
+          run_capture() {
+            local name="$1"; shift
+            { printf '$'; printf ' %q' "$@"; printf '\n'; } > "$OUT/logs/$name.command.txt"
+            set +e
+            timeout --signal=TERM --kill-after=30s 1500 "$@" > "$OUT/rea/$name.json" 2> "$OUT/logs/$name.stderr"
+            local rc=$?
+            set -e
+            echo "$rc" > "$OUT/logs/$name.exit"
+            echo "$name exit=$rc"
+          }
+          run_capture launcher-inspect "${REA[@]}" inspect "$SOC_LAUNCHER" --provider ghidra --json --timings
+          run_capture libapp-inspect "${REA[@]}" inspect "$SOC_LIBAPP" --provider ghidra --json --timings
+          run_capture launcher-layout "${REA[@]}" inspect-binary-layout "$SOC_LAUNCHER" --json
+          run_capture libapp-layout "${REA[@]}" inspect-binary-layout "$SOC_LIBAPP" --json
+          run_capture launcher-entry-search "${REA[@]}" search "$SOC_LAUNCHER" entry --kind procedures --provider ghidra --json
+          run_capture launcher-entry-function "${REA[@]}" function "$SOC_LAUNCHER" entry --provider ghidra --json
+          run_capture launcher-callee-108048 "${REA[@]}" function "$SOC_LAUNCHER" 0x108048 --provider ghidra --json
+          run_capture launcher-callee-107e4d "${REA[@]}" function "$SOC_LAUNCHER" 0x107e4d --provider ghidra --json
+          run_capture libapp-carbon-string "${REA[@]}" search "$SOC_LIBAPP" carbonStorage --kind strings --provider ghidra --json
+          run_capture libapp-sqlite-string "${REA[@]}" search "$SOC_LIBAPP" sqlite3_column_bytes --kind strings --provider ghidra --json
+          run_capture libapp-carbon-xrefs "${REA[@]}" xrefs "$SOC_LIBAPP" --address=0x2dfd00 --provider ghidra --json
+          run_capture release-exposure "${REA[@]}" audit-release-exposure "$SOC_LAUNCHER" --json
+          true
+
+      - name: Run AOTopsy Dart AOT reconstruction and bounded decompilation
+        shell: bash
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/out/aotopsy"
+          mkdir -p "$OUT"
+          run_aot() {
+            local name="$1"; shift
+            { printf '$'; printf ' %q' "$@"; printf '\n'; } > "$RUNNER_TEMP/out/logs/aotopsy-$name.command.txt"
+            set +e
+            timeout --signal=TERM --kill-after=30s 2400 "$@" > "$OUT/$name.stdout" 2> "$RUNNER_TEMP/out/logs/aotopsy-$name.stderr"
+            local rc=$?
+            set -e
+            echo "$rc" > "$RUNNER_TEMP/out/logs/aotopsy-$name.exit"
+            echo "aotopsy $name exit=$rc"
+          }
+          run_aot doctor "$AOTOPSY_BIN" doctor "$SOC_LIBAPP"
+          run_aot full-pipeline "$AOTOPSY_BIN" "$SOC_LIBAPP" --graph --out "$OUT/full-pipeline"
+          run_aot export-app-only "$AOTOPSY_BIN" export-dart --lib "$SOC_LIBAPP" --out "$OUT/reconstructed-app" --app-only
+          run_aot export-full "$AOTOPSY_BIN" export-dart --lib "$SOC_LIBAPP" --out "$OUT/reconstructed-full"
+          run_aot decompile-from-main "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --from-main --max 300 --out "$OUT/from-main"
+          run_aot strings-carbon-xref "$AOTOPSY_BIN" _debug strings --lib "$SOC_LIBAPP" --find carbonStorage --xref
+          run_aot strings-sqlite-xref "$AOTOPSY_BIN" _debug strings --lib "$SOC_LIBAPP" --find sqlite3_column_bytes --xref
+          run_aot fingerprint "$AOTOPSY_BIN" _debug fingerprint --lib "$SOC_LIBAPP"
+          run_aot ffi-trace "$AOTOPSY_BIN" _debug ffi-trace --lib "$SOC_LIBAPP"
+          run_aot dispatch-table "$AOTOPSY_BIN" _debug dispatch-table --lib "$SOC_LIBAPP"
+          true
+
+      - name: Run independent unpacking and static cross-checks on copies only
+        shell: bash
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/out"
+          KIT="$RUNNER_TEMP/rea-kit/extracted"
+          UPX_BIN="$(find "$KIT" -type f -name upx -perm -111 -print -quit)"
+          R2_BIN="$(find "$KIT" -type f -name r2 -perm -111 -print -quit)"
+          CAPA_BIN="$(find "$KIT" -type f -name capa -perm -111 -print -quit)"
+          if [ -n "$UPX_BIN" ]; then
+            set +e
+            "$UPX_BIN" -t "$SOC_LAUNCHER" > "$OUT/raw/upx-test.txt" 2>&1
+            echo "$?" > "$OUT/logs/upx-test.exit"
+            cp "$SOC_LAUNCHER" "$OUT/unpacked/soc_app.copy"
+            "$UPX_BIN" -d "$OUT/unpacked/soc_app.copy" -o "$OUT/unpacked/soc_app.unpacked" > "$OUT/raw/upx-decompress.txt" 2>&1
+            echo "$?" > "$OUT/logs/upx-decompress.exit"
+            set -e
+          fi
+          if [ -n "$R2_BIN" ]; then
+            set +e
+            "$R2_BIN" -q -c 'aaa;afl' "$SOC_LAUNCHER" > "$OUT/raw/radare2-launcher-afl.txt" 2>&1
+            echo "$?" > "$OUT/logs/radare2-launcher.exit"
+            "$R2_BIN" -q -c 'aaa;afl' "$SOC_LIBAPP" > "$OUT/raw/radare2-libapp-afl.txt" 2>&1
+            echo "$?" > "$OUT/logs/radare2-libapp.exit"
+            if [ -f "$OUT/unpacked/soc_app.unpacked" ]; then
+              "$R2_BIN" -q -c 'aaa;afl' "$OUT/unpacked/soc_app.unpacked" > "$OUT/raw/radare2-unpacked-afl.txt" 2>&1
+              echo "$?" > "$OUT/logs/radare2-unpacked.exit"
+            fi
+            set -e
+          fi
+          if [ -n "$CAPA_BIN" ]; then
+            set +e
+            "$CAPA_BIN" "$SOC_LAUNCHER" > "$OUT/raw/capa-launcher.txt" 2>&1
+            echo "$?" > "$OUT/logs/capa-launcher.exit"
+            "$CAPA_BIN" "$SOC_LIBAPP" > "$OUT/raw/capa-libapp.txt" 2>&1
+            echo "$?" > "$OUT/logs/capa-libapp.exit"
+            set -e
+          fi
+          readelf -h -l -d "$SOC_LAUNCHER" > "$OUT/raw/readelf-launcher.txt" 2>&1 || true
+          readelf -h -l -S -d "$SOC_LIBAPP" > "$OUT/raw/readelf-libapp.txt" 2>&1 || true
+          strings -a -n 4 "$SOC_LIBAPP" > "$OUT/raw/libapp-strings.txt" || true
+          if [ -f "$OUT/unpacked/soc_app.unpacked" ]; then
+            set +e
+            timeout 1500 "$REA_NODE" "$REA_ENTRY" inspect "$OUT/unpacked/soc_app.unpacked" --provider ghidra --json --timings > "$OUT/rea/unpacked-launcher-inspect.json" 2> "$OUT/logs/unpacked-launcher-inspect.stderr"
+            echo "$?" > "$OUT/logs/unpacked-launcher-inspect.exit"
+            set -e
+          fi
+
+      - name: Build reconstruction index and readable report
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, json, re, pathlib
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"out"
+          aot=out/"aotopsy"
+          def count_jsonl(p):
+              try: return sum(1 for line in p.open(errors="replace") if line.strip())
+              except Exception: return None
+          records={}
+          for name in ["functions.jsonl","call_edges.jsonl","classes.jsonl","string_refs.jsonl","dispatch_table.jsonl","evidence.jsonl"]:
+              hits=list(aot.rglob(name))
+              if hits: records[name]=[{"path":str(p.relative_to(out)),"records":count_jsonl(p)} for p in hits]
+          dart_files=list(aot.rglob("*.dart"))
+          dart_stats={"files":len(dart_files),"bytes":sum(p.stat().st_size for p in dart_files),"lines":0,"classes":0,"methods":0}
+          interesting=[]
+          for p in dart_files:
+              try: s=p.read_text(errors="replace")
+              except Exception: continue
+              dart_stats["lines"]+=s.count("\n")+1
+              dart_stats["classes"]+=len(re.findall(r"\bclass\s+\w+",s))
+              dart_stats["methods"]+=len(re.findall(r"^\s*(?:static\s+)?(?:Future<[^>]+>|[\w<>?]+)\s+\w+\s*\(",s,re.M))
+              if re.search(r"(?i)carbon|soil|soc|storage|sqlite|depth|density|calculate|layer|organic|sample|bulk",s):
+                  interesting.append({"path":str(p.relative_to(out)),"bytes":p.stat().st_size,"keywords":sorted(set(re.findall(r"(?i)carbon|soil|soc|storage|sqlite|depth|density|calculate|layer|organic|sample|bulk",s)))})
+          summary={"aotopsy_jsonl":records,"dart_source_export":dart_stats,"keyword_files":interesting[:250]}
+          (out/"reconstruction-index.json").write_text(json.dumps(summary,indent=2)+"\n")
+          report=["# SOC-Assessment black-box reconstruction run","",f"- AOTopsy JSONL outputs: {json.dumps(records,ensure_ascii=False)}",f"- Dart export: **{dart_stats['files']} files**, {dart_stats['bytes']} bytes, {dart_stats['lines']} lines, {dart_stats['classes']} class declarations, {dart_stats['methods']} method-like declarations.","","## Files containing domain-related tokens",""]
+          report += [f"- {x['path']} ({x['bytes']} bytes): {', '.join(x['keywords'])}" for x in interesting[:250]]
+          (out/"reconstruction-report.md").write_text("\n".join(report)+"\n")
+          print((out/"reconstruction-report.md").read_text()[:18000])
+          PY
+
+      - name: Publish concise run summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "# REA + AOTopsy full SOC black-box reconstruction"
+            echo ""
+            echo "- Target artifact: SOC Actions run 45067513096 / artifact 14771559896"
+            echo "- Primary ELF SHA-256: eb9b74c1c08720af0528b598b30617f9f72db62337d2e9f541a8778ecb2f9f56"
+            echo "- Dart AOT libapp.so SHA-256: 3c42c61436618aeec58473c434c7f3908ea15a05b6c0267a13b56327d01d30c8"
+            echo "- REA: 6.9.0 / Ghidra 12.1.4"
+            echo "- AOTopsy: 1.6.0 (Linux x86_64, SHA-256 verified)"
+            echo ""
+            if [ -f "$RUNNER_TEMP/out/reconstruction-report.md" ]; then cat "$RUNNER_TEMP/out/reconstruction-report.md"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload all reconstruction outputs and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-full-reconstruction-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
