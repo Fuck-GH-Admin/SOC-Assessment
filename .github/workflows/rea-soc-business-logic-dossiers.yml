@@ -144,7 +144,7 @@ jobs:
           PY
           find "$RUNNER_TEMP/out/functions" -type f -printf '%P\t%s\n' | sort > "$RUNNER_TEMP/out/functions/file-index.tsv"
 
-      - name: Publish and upload full dossiers
+      - name: Publish dossier summary
         if: always()
         shell: bash
         run: |
@@ -157,6 +157,9 @@ jobs:
             if [ -f "$RUNNER_TEMP/out/business-function-dossiers.md" ]; then sed -n '1,500p' "$RUNNER_TEMP/out/business-function-dossiers.md"; fi
             if [ -f "$RUNNER_TEMP/out/assets/asset-analysis.md" ]; then sed -n '1,350p' "$RUNNER_TEMP/out/assets/asset-analysis.md"; fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload full business logic dossiers
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: rea-soc-business-logic-dossiers-20261123
