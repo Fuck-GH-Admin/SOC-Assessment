@@ -1,0 +1,166 @@
+name: SOC business logic dossiers from AOT snapshot
+on:
+  push:
+    branches:
+      - experiment/rea-business-logic-dossiers-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  dossiers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Retrieve original SOC artifact, prior function map and AOTopsy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/target" "$RUNNER_TEMP/map" "$RUNNER_TEMP/tools" "$RUNNER_TEMP/out"/{functions,strings,assets,logs}
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14818715858/zip" -o "$RUNNER_TEMP/map.zip"
+          echo "9ebc79c2c0f4fb7d61ff2630700ceb95545e0a6eac254cdffb45da2e257e1a04  $RUNNER_TEMP/map.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/map.zip" -d "$RUNNER_TEMP/map"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14771559896/zip" -o "$RUNNER_TEMP/target.zip"
+          unzip -q "$RUNNER_TEMP/target.zip" -d "$RUNNER_TEMP/target/archive"
+          inner="$(find "$RUNNER_TEMP/target/archive" -name soc-shield-linux-x64.tar.gz -print -quit)"
+          tar -xzf "$inner" -C "$RUNNER_TEMP/target"
+          LIBAPP="$(find "$RUNNER_TEMP/target" -name libapp.so -print -quit)"
+          ROOT="$(dirname "$(dirname "$LIBAPP")")"
+          echo "3c42c61436618aeec58473c434c7f3908ea15a05b6c0267a13b56327d01d30c8  $LIBAPP" | sha256sum --check -
+          echo "SOC_LIBAPP=$LIBAPP" >> "$GITHUB_ENV"
+          echo "SOC_ROOT=$ROOT" >> "$GITHUB_ENV"
+          curl --fail --location --retry 4 \
+            "https://github.com/BroNils/aotopsy/releases/download/v1.6.0/aotopsy_v1.6.0_linux_amd64.tar.gz" -o "$RUNNER_TEMP/tools/aotopsy.tar.gz"
+          echo "a16d5c9f79f34a4cdff5565128f58d0d97d7b1de058b395358f77dfff817ba45  $RUNNER_TEMP/tools/aotopsy.tar.gz" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/tools/aotopsy"
+          tar -xzf "$RUNNER_TEMP/tools/aotopsy.tar.gz" -C "$RUNNER_TEMP/tools/aotopsy"
+          AOT="$(find "$RUNNER_TEMP/tools/aotopsy" -name aotopsy -type f -perm -111 -print -quit)"
+          echo "AOTOPSY_BIN=$AOT" >> "$GITHUB_ENV"
+
+      - name: Decompile business functions selected by preserved strings
+        shell: bash
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/out/functions"
+          mkdir -p "$OUT"
+          run_func() {
+            local addr="$1" label="$2"
+            set +e
+            timeout 240 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --func "$addr" --out "$OUT/$label" > "$OUT/$label.stdout" 2> "$OUT/$label.stderr"
+            local rc=$?
+            set -e
+            echo "$rc" > "$OUT/$label.exit"
+            echo "$label $addr exit=$rc"
+          }
+          run_func 0x7d969c main-candidate-a
+          run_func 0x7da31c main-candidate-b
+          run_func 0x5ad860 carbon-storage-record
+          run_func 0x5ae4dc algorithm-version-access
+          run_func 0x5b13a0 crop-biomass-soil-layers
+          run_func 0x5de74c bulk-density-validation
+          run_func 0x5df4c4 soc-input-validation
+          run_func 0x5e4368 current-layer-report
+          run_func 0x5ee61c soc-vertical-distribution
+          run_func 0x5eee50 erosion-soc-relation
+          run_func 0x5f203c result-metrics
+          run_func 0x5f2cc0 measured-data-and-density
+          run_func 0x5f6094 crop-biomass-path
+
+      - name: Query exact strings and SQLite operations in Dart isolate snapshot
+        shell: bash
+        run: |
+          set -uo pipefail
+          OUT="$RUNNER_TEMP/out/strings"
+          mkdir -p "$OUT"
+          for needle in carbonStorage algorithmVersion soilLayers cropBiomass socValue sqlite3_column_bytes sqlite3_open sqlite3_prepare CREATE\ TABLE SELECT INSERT UPDATE algorithmVersion depthLabel fert erosion bd '算法口径' '施肥处理' '侵蚀强度' '当前土层' '土壤容重' 'SOC 含量来自' '当前土层碳储量' '碳密度'; do
+            safe="$(echo "$needle" | tr -cs '[:alnum:]' '-')"
+            set +e
+            timeout 120 "$AOTOPSY_BIN" _debug strings --lib "$SOC_LIBAPP" --find "$needle" --xref > "$OUT/$safe.stdout" 2> "$OUT/$safe.stderr"
+            echo "$?" > "$OUT/$safe.exit"
+            set -e
+          done
+          true
+
+      - name: Inventory Flutter assets and inspect embedded databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          find "$SOC_ROOT" -type f -printf '%P\t%s\n' | sort > "$RUNNER_TEMP/out/assets/all-files.tsv"
+          find "$SOC_ROOT" -type f \( -iname '*.db' -o -iname '*.sqlite' -o -iname '*.sqlite3' -o -iname '*.csv' -o -iname '*.json' -o -iname '*.yaml' -o -iname '*.yml' -o -iname '*.xml' -o -iname '*.txt' -o -iname '*.sql' \) -printf '%p\t%s\n' | sort > "$RUNNER_TEMP/out/assets/data-candidates.tsv"
+          python3 - <<'PY'
+          import pathlib,os,sqlite3,json,csv,re
+          root=pathlib.Path(os.environ["SOC_ROOT"])
+          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"out/assets"
+          report=["# Flutter asset and embedded data inventory",""]
+          files=list(root.rglob("*"))
+          report.append(f"Total files: {sum(p.is_file() for p in files)}")
+          report.append("")
+          dbs=[p for p in files if p.is_file() and p.suffix.lower() in {".db",".sqlite",".sqlite3"}]
+          report.append("## Embedded databases")
+          if not dbs: report.append("No standalone SQLite database file found in the packaged app.")
+          for db in dbs:
+            report.append(f"### {db.relative_to(root)} ({db.stat().st_size} bytes)")
+            try:
+              con=sqlite3.connect(f"file:{db}?mode=ro",uri=True)
+              tabs=con.execute("select name,sql from sqlite_master where type='table' order by name").fetchall()
+              for name,sql in tabs:
+                n=con.execute('select count(*) from "'+name.replace('"','""')+'"').fetchone()[0]
+                report.append(f"- {name}: {n} rows; schema={sql}")
+              con.close()
+            except Exception as e: report.append("SQLite read error: "+str(e))
+          report += ["","## Text and structured assets"]
+          candidates=[p for p in files if p.is_file() and p.suffix.lower() in {".json",".csv",".yaml",".yml",".xml",".txt",".sql"}]
+          for p in candidates[:250]:
+            report.append(f"### {p.relative_to(root)} ({p.stat().st_size} bytes)")
+            try:
+              s=p.read_text(errors="replace")
+              report.append(s[:1600].replace("\n","\n    "))
+            except Exception as e: report.append(str(e))
+          (out/"asset-analysis.md").write_text("\n".join(report)+"\n")
+          print((out/"asset-analysis.md").read_text()[:18000])
+          PY
+
+      - name: Build readable function dossiers from native decompilation output
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import pathlib,os,json
+          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"out/functions"
+          report=["# SOC AOT function dossiers",""]
+          for p in sorted(root.rglob("*")):
+            if not p.is_file() or p.suffix in {".exit",".stderr"} or p.name.endswith(".stdout"): continue
+            try: data=p.read_text(errors="replace")
+            except Exception: continue
+            if not data.strip(): continue
+            report += [f"## {p.relative_to(root)}","",f"Size: {len(data.encode())} bytes","",data[:12000],""] 
+          for p in sorted(root.glob("*.exit")):
+            report.append(f"- {p.stem}: exit {p.read_text().strip()}")
+          (pathlib.Path(os.environ["RUNNER_TEMP"])/"out"/"business-function-dossiers.md").write_text("\n".join(report)+"\n")
+          print((pathlib.Path(os.environ["RUNNER_TEMP"])/"out"/"business-function-dossiers.md").read_text()[:24000])
+          PY
+          find "$RUNNER_TEMP/out/functions" -type f -printf '%P\t%s\n' | sort > "$RUNNER_TEMP/out/functions/file-index.tsv"
+
+      - name: Publish and upload full dossiers
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "# SOC business logic dossiers"
+            echo ""
+            echo "Target libapp.so SHA-256: 3c42c61436618aeec58473c434c7f3908ea15a05b6c0267a13b56327d01d30c8"
+            echo "AOTopsy 1.6.0; Dart AOT 3.12.2; Linux x86-64."
+            echo ""
+            if [ -f "$RUNNER_TEMP/out/business-function-dossiers.md" ]; then sed -n '1,500p' "$RUNNER_TEMP/out/business-function-dossiers.md"; fi
+            if [ -f "$RUNNER_TEMP/out/assets/asset-analysis.md" ]; then sed -n '1,350p' "$RUNNER_TEMP/out/assets/asset-analysis.md"; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-business-logic-dossiers-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
