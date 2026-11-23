@@ -82,7 +82,7 @@ jobs:
               n=queue.pop()
               if n in seen: continue
               seen.add(n)
-              queue.extend(adjacency.get(n,())-seen)
+              queue.extend(set(adjacency.get(n,()))-seen)
             reached=[pc2 for pc2,nm in target_names.items() if nm in seen]
             main_roots[pc]={"name":root_name,"reachable_functions":len(seen),"reachable_business_targets":reached}
             report += ["",f"## Direct-call reachability from main candidate {pc} ({root_name})",json.dumps(main_roots[pc],ensure_ascii=False)]
