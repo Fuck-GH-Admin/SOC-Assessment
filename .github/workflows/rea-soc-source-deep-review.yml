@@ -3,11 +3,9 @@ on:
   push:
     branches:
       - experiment/rea-artifact-deep-review-20261123
-
 permissions:
   actions: read
   contents: read
-
 jobs:
   review-reconstruction:
     runs-on: ubuntu-latest
@@ -26,9 +24,8 @@ jobs:
           echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/recovered.zip" | sha256sum --check -
           unzip -q "$RUNNER_TEMP/recovered.zip" -d "$RUNNER_TEMP/recovered"
           test -s "$RUNNER_TEMP/recovered/aotopsy/reconstructed-app/app/app.dart"
-          echo "Reconstruction artifact integrity passed." | tee "$RUNNER_TEMP/review/artifact-status.txt"
 
-      - name: Retrieve original libapp.so and verified AOTopsy 1.6.0 for targeted function dossiers
+      - name: Retrieve exact libapp.so and AOTopsy 1.6.0
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -52,7 +49,7 @@ jobs:
           AOT="$(find "$RUNNER_TEMP/tools/aotopsy" -name aotopsy -type f -perm -111 -print -quit)"
           echo "AOTOPSY_BIN=$AOT" >> "$GITHUB_ENV"
 
-      - name: Inspect reconstructed source, names, function graph and xrefs
+      - name: Inspect recovered Dart source and extract application-oriented code windows
         shell: bash
         run: |
           set -euo pipefail
@@ -62,66 +59,34 @@ jobs:
           out=pathlib.Path(os.environ["RUNNER_TEMP"])/"review"
           app=root/"aotopsy/reconstructed-app/app/app.dart"
           src=app.read_text(errors="replace")
-          keywords=re.compile(r"carbon|soil|soc|sample|storage|sqlite|depth|density|calculat|layer|organic|bulk|mass|project|result|export|import|database",re.I)
+          terms=re.compile(r"carbonStorage|algorithmVersion|depthLabel|soil|soc|sample|mass|bd|计算参数|算法口径|施肥处理|侵蚀强度|当前土层|土壤容重|辅助观测|采样|样点|碳储量|碳密度",re.I)
           classes=list(re.finditer(r"(?m)^\s*(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)",src))
           decls=list(re.finditer(r"(?m)^\s*(?:static\s+)?(?:external\s+)?(?:[\w$<>?,. ]+)\s+([A-Za-z_$][\w$]*)\s*\(",src))
-          counts={
-            "source_path":str(app.relative_to(root)),
-            "bytes":len(src.encode()),
-            "lines":src.count("\n")+1,
-            "classes":len(classes),
-            "method_like_declarations":len(decls),
+          metrics={
+            "source_path":str(app.relative_to(root)),"bytes":len(src.encode()),"lines":src.count("\n")+1,
+            "classes":len(classes),"method_like_declarations":len(decls),
             "unknown_markers":{x:len(re.findall(re.escape(x),src)) for x in ["<unknown>","dynamicCall","indirectCall","stub_","sub_","local_"]},
             "domain_keyword_counts":{k:len(re.findall(k,src,re.I)) for k in ["carbon","soil","soc","sample","storage","sqlite","depth","density","calculate","layer","organic","bulk","mass"]}
           }
-          (out/"source-metrics.json").write_text(json.dumps(counts,indent=2)+"\n")
-          lines=src.splitlines()
-          snippets=[]; seen=set()
+          (out/"source-metrics.json").write_text(json.dumps(metrics,indent=2)+"\n")
+          lines=src.splitlines(); snippets=[]; seen=set()
           for i,line in enumerate(lines):
-            if keywords.search(line):
-              lo=max(0,i-8); hi=min(len(lines),i+18)
+            if terms.search(line):
+              lo=max(0,i-10); hi=min(len(lines),i+24)
               block="\n".join(f"{n+1}: {lines[n]}" for n in range(lo,hi))
-              if block not in seen:
-                seen.add(block); snippets.append((i+1,block))
-          report=["# Recovered Dart source — focused review","",f"- Source: {app.relative_to(root)}",f"- {counts['lines']} lines / {counts['bytes']} bytes",f"- {counts['classes']} class declarations / {counts['method_like_declarations']} method-like declarations","","## Class names",""]
-          report += [f"- {m.group(1)} (line {src[:m.start()].count(chr(10))+1})" for m in classes[:500]]
-          report += ["","## Domain-related source windows",""]
-          report += [f"### Around line {line}\n\n    "+block.replace("\n","\n    ") for line,block in snippets[:100]]
+              if block not in seen: seen.add(block); snippets.append((i+1,block))
+          report=["# Recovered Dart source review","",f"- File: {app.relative_to(root)}",f"- {metrics['lines']} lines / {metrics['bytes']} bytes",f"- {metrics['classes']} classes / {metrics['method_like_declarations']} method-like declarations","","## Class names",""]
+          report += [f"- {m.group(1)} (line {src[:m.start()].count(chr(10))+1})" for m in classes]
+          report += ["","## App-related source windows",""]
+          report += [f"### Around line {n}\n\n    "+b.replace("\n","\n    ") for n,b in snippets[:120]]
           (out/"recovered-source-review.md").write_text("\n".join(report)+"\n")
-          print(json.dumps(counts,indent=2))
-          print("CLASS_NAMES="+", ".join(m.group(1) for m in classes[:200]))
+          print(json.dumps(metrics,indent=2))
+          print("CLASS_NAMES="+", ".join(m.group(1) for m in classes))
           print("DOMAIN_WINDOWS="+str(len(snippets)))
+          print((out/"recovered-source-review.md").read_text()[:16000])
           PY
-          python3 - <<'PY'
-          import json,re,pathlib,os
-          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"recovered/aotopsy/full-pipeline"
-          out=pathlib.Path(os.environ["RUNNER_TEMP"])/"review"
-          terms=re.compile(r"carbon|soil|soc|sample|storage|sqlite|depth|density|calculat|layer|organic|bulk|mass|database|project|result",re.I)
-          for name in ["functions.jsonl","call_edges.jsonl","classes.jsonl","string_refs.jsonl","dispatch_table.jsonl"]:
-            p=root/name
-            if not p.exists(): continue
-            hits=[]; first=[]
-            with p.open(errors="replace") as f:
-              for line in f:
-                try: obj=json.loads(line)
-                except Exception: continue
-                if len(first)<3:first.append(obj)
-                if terms.search(json.dumps(obj,ensure_ascii=False)):
-                  hits.append(obj)
-                  if len(hits)>=500: break
-            (out/(name+".first-records.json")).write_text(json.dumps(first,ensure_ascii=False,indent=2)+"\n")
-            (out/(name+".domain-hits.json")).write_text(json.dumps(hits,ensure_ascii=False,indent=2)+"\n")
-            print(name,"first_keys=",list(first[0].keys()) if first and isinstance(first[0],dict) else None,"domain_hits=",len(hits))
-            if hits: print("SAMPLE_HIT",json.dumps(hits[0],ensure_ascii=False)[:1200])
-          PY
-          for f in "$RUNNER_TEMP/recovered/logs/aotopsy-doctor.stderr" "$RUNNER_TEMP/recovered/aotopsy/doctor.stdout" "$RUNNER_TEMP/recovered/logs/aotopsy-decompile-from-main.stderr" "$RUNNER_TEMP/recovered/logs/aotopsy-decompile-from-main.exit" "$RUNNER_TEMP/recovered/aotopsy/strings-carbon-xref.stdout" "$RUNNER_TEMP/recovered/aotopsy/strings-sqlite-xref.stdout" "$RUNNER_TEMP/recovered/aotopsy/fingerprint.stdout"; do
-            if [ -f "$f" ]; then
-              echo "===== $f ====="
-              sed -n '1,180p' "$f"
-            fi
-          done | tee "$RUNNER_TEMP/review/tool-diagnostics.txt"
 
-      - name: Map domain strings to AOT functions and build candidate addresses
+      - name: Map preserved Dart strings to functions and call sites
         shell: bash
         run: |
           set -euo pipefail
@@ -132,15 +97,13 @@ jobs:
           def readj(name):
             p=root/name
             return [json.loads(x) for x in p.open(errors="replace") if x.strip()]
-          funcs=readj("functions.jsonl")
-          refs=readj("string_refs.jsonl")
-          terms=re.compile(r"carbonStorage|algorithmVersion|fert|erosion|depthLabel|soil|SOC|Sample|sample|mass|bd|计算参数|算法口径|施肥处理|侵蚀强度|当前土层|土壤容重|辅助观测|采样|样点|碳储量|碳密度",re.I)
+          funcs=readj("functions.jsonl"); refs=readj("string_refs.jsonl")
+          terms=re.compile(r"carbonStorage|algorithmVersion|depthLabel|soil|SOC|Sample|sample|mass|\\bbd\\b|计算参数|算法口径|施肥处理|侵蚀强度|当前土层|土壤容重|辅助观测|采样|样点|碳储量|碳密度",re.I)
           starts=[]
           for f in funcs:
             try: starts.append((int(str(f.get("pc","0")),16),int(f.get("size",0)),f))
             except Exception: pass
-          starts.sort(key=lambda x:x[0])
-          pcs=[x[0] for x in starts]
+          starts.sort(key=lambda x:x[0]); pcs=[x[0] for x in starts]
           selected=[]; candidates={}
           for r in refs:
             value=str(r.get("value",""))
@@ -148,102 +111,59 @@ jobs:
             rec=dict(r)
             try: pc=int(str(r.get("pc","0")),16)
             except Exception: pc=0
-            i=bisect.bisect_right(pcs,pc)-1
-            owner=None
+            i=bisect.bisect_right(pcs,pc)-1; owner=None
             if i>=0:
               s,sz,fn=starts[i]
               if sz<=0 or pc<s+sz: owner=fn
-            rec["containing_function"]=owner
-            selected.append(rec)
-            if owner:
-              key=str(owner.get("pc"))
-              candidates[key]=owner
+            rec["containing_function"]=owner; selected.append(rec)
+            if owner: candidates[str(owner.get("pc"))]=owner
           (out/"domain-string-refs.json").write_text(json.dumps(selected,ensure_ascii=False,indent=2)+"\n")
           rows=sorted(candidates.values(),key=lambda x:int(str(x.get("pc","0")),16))
           with (out/"function-candidates.tsv").open("w") as f:
             for x in rows[:40]: f.write(f"{x.get('pc','')}\t{x.get('name','')}\t{x.get('size','')}\n")
           print("DOMAIN_STRING_REFS",len(selected))
-          for r in selected[:120]:
-            print("STRING",r.get("pc"),r.get("func"),str(r.get("value",""))[:260])
-            if r.get("containing_function"): print("OWNER",json.dumps(r["containing_function"],ensure_ascii=False)[:500])
+          for r in selected[:150]:
+            print("STRING",r.get("pc"),r.get("func"),str(r.get("value",""))[:500])
+            if r.get("containing_function"): print("OWNER",json.dumps(r["containing_function"],ensure_ascii=False)[:800])
           print("FUNCTION_CANDIDATES",len(rows))
           print((out/"function-candidates.tsv").read_text())
           PY
-      - name: Run focused Dart function decompilation for app-specific names
+
+      - name: Decompile AOT main candidates and functions referencing business strings
         shell: bash
         run: |
           set -uo pipefail
           OUT="$RUNNER_TEMP/review/targeted"
           mkdir -p "$OUT"
-          for addr in 0x7d969c 0x7da31c; do
+          run_func() {
+            local addr="$1" name="$2"
             set +e
-            timeout 300 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --func "$addr" --out "$OUT/main-$addr" > "$OUT/main-$addr.stdout" 2> "$OUT/main-$addr.stderr"
-            echo "$?" > "$OUT/main-$addr.exit"
+            timeout 240 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --func "$addr" --out "$OUT/$name" > "$OUT/$name.stdout" 2> "$OUT/$name.stderr"
+            local rc=$?
             set -e
-          done
+            echo "$rc" > "$OUT/$name.exit"
+            echo "$name $addr exit=$rc"
+          }
+          run_func 0x7d969c main-a
+          run_func 0x7da31c main-b
           if [ -f "$RUNNER_TEMP/review/function-candidates.tsv" ]; then
             n=0
-            while IFS=          for needle in carbonStorage sqlite3_column_bytes; do
-            set +e
-            timeout 180 "$AOTOPSY_BIN" _debug strings --lib "$SOC_LIBAPP" --find "$needle" --xref > "$OUT/xref-$needle.stdout" 2> "$OUT/xref-$needle.stderr"
-            echo "$?" > "$OUT/xref-$needle.exit"
-            set -e
-          done
-          true
-
-      - name: Build final review summary and publish
-        if: always()
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          import json,pathlib,os
-          root=pathlib.Path(os.environ["RUNNER_TEMP"])/"review"
-          report=["# SOC reconstructed-source deep review",""]
-          p=root/"source-metrics.json"
-          if p.exists():
-            m=json.loads(p.read_text())
-            report += [f"- Recovered Dart: {m['lines']} lines / {m['bytes']} bytes",f"- Classes: {m['classes']}",f"- Method-like declarations: {m['method_like_declarations']}","- Unknown markers: "+json.dumps(m["unknown_markers"],ensure_ascii=False),"- Domain token counts: "+json.dumps(m["domain_keyword_counts"],ensure_ascii=False)]
-          report += ["","## Function and class cross-reference hits",""]
-          for name in ["functions.jsonl","classes.jsonl","string_refs.jsonl","call_edges.jsonl","dispatch_table.jsonl"]:
-            q=root/(name+".domain-hits.json")
-            if q.exists():
-              data=json.loads(q.read_text())
-              report.append(f"- {name}: {len(data)} matching records (bounded to 500)")
-              for row in data[:12]: report.append("  - "+json.dumps(row,ensure_ascii=False)[:700])
-          (root/"deep-review-summary.md").write_text("\n".join(report)+"\n")
-          print((root/"deep-review-summary.md").read_text()[:18000])
-          PY
-          if [ -f "$RUNNER_TEMP/review/deep-review-summary.md" ]; then cat "$RUNNER_TEMP/review/deep-review-summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
-
-      - name: Upload source reconstruction review
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: rea-soc-source-deep-review-20261123
-          path: ${{ runner.temp }}/review/
-          if-no-files-found: warn
-          compression-level: 0
-          retention-days: 14
-\t' read -r addr name size; do
+            while IFS=$'\t' read -r addr name size; do
               [ -n "$addr" ] || continue
-              n=$((n+1))
-              [ "$n" -le 25 ] || break
+              n=$((n+1)); [ "$n" -le 25 ] || break
               safe="$(echo "$addr" | tr -cd '[:alnum:]x')"
-              set +e
-              timeout 180 "$AOTOPSY_BIN" _debug decompile-native --lib "$SOC_LIBAPP" --func "$addr" --out "$OUT/candidate-$safe" > "$OUT/candidate-$safe.stdout" 2> "$OUT/candidate-$safe.stderr"
-              echo "$?" > "$OUT/candidate-$safe.exit"
-              set -e
+              run_func "$addr" "candidate-$safe"
             done < "$RUNNER_TEMP/review/function-candidates.tsv"
           fi
-          for needle in carbonStorage sqlite3_column_bytes; do
+          for needle in carbonStorage sqlite3_column_bytes algorithmVersion depthLabel fert erosion bd; do
             set +e
-            timeout 180 "$AOTOPSY_BIN" _debug strings --lib "$SOC_LIBAPP" --find "$needle" --xref > "$OUT/xref-$needle.stdout" 2> "$OUT/xref-$needle.stderr"
+            timeout 120 "$AOTOPSY_BIN" _debug strings --lib "$SOC_LIBAPP" --find "$needle" --xref > "$OUT/xref-$needle.stdout" 2> "$OUT/xref-$needle.stderr"
             echo "$?" > "$OUT/xref-$needle.exit"
             set -e
           done
           true
 
-      - name: Build final review summary and publish
+      - name: Build deep review report
         if: always()
         shell: bash
         run: |
@@ -255,19 +175,21 @@ jobs:
           if p.exists():
             m=json.loads(p.read_text())
             report += [f"- Recovered Dart: {m['lines']} lines / {m['bytes']} bytes",f"- Classes: {m['classes']}",f"- Method-like declarations: {m['method_like_declarations']}","- Unknown markers: "+json.dumps(m["unknown_markers"],ensure_ascii=False),"- Domain token counts: "+json.dumps(m["domain_keyword_counts"],ensure_ascii=False)]
-          report += ["","## Function and class cross-reference hits",""]
-          for name in ["functions.jsonl","classes.jsonl","string_refs.jsonl","call_edges.jsonl","dispatch_table.jsonl"]:
-            q=root/(name+".domain-hits.json")
-            if q.exists():
-              data=json.loads(q.read_text())
-              report.append(f"- {name}: {len(data)} matching records (bounded to 500)")
-              for row in data[:12]: report.append("  - "+json.dumps(row,ensure_ascii=False)[:700])
+          q=root/"domain-string-refs.json"
+          if q.exists():
+            refs=json.loads(q.read_text())
+            report += ["",f"- Domain-related string references: {len(refs)}",""]
+            report += ["  - "+json.dumps(x,ensure_ascii=False)[:900] for x in refs[:80]]
+          report += ["","## Decompiled function exit statuses",""]
+          targeted=root/"targeted"
+          if targeted.exists():
+            for p in sorted(targeted.glob("*.exit")): report.append(f"- {p.stem}: {p.read_text().strip()}")
           (root/"deep-review-summary.md").write_text("\n".join(report)+"\n")
           print((root/"deep-review-summary.md").read_text()[:18000])
           PY
-          if [ -f "$RUNNER_TEMP/review/deep-review-summary.md" ]; then cat "$RUNNER_TEMP/review/deep-review-summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          cat "$RUNNER_TEMP/review/deep-review-summary.md" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload source reconstruction review
+      - name: Upload source reconstruction review and targeted decompilations
         if: always()
         uses: actions/upload-artifact@v4
         with:
