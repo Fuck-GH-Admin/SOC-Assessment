@@ -1,0 +1,143 @@
+name: SOC caller, field-access and dispatch evidence join
+on:
+  push:
+    branches:
+      - experiment/rea-soc-callers-fields-20261123
+permissions:
+  actions: read
+  contents: read
+jobs:
+  evidence-join:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download and verify the AOTopsy snapshot and higher-budget decompilations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/full" "$RUNNER_TEMP/redec" "$RUNNER_TEMP/out"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" -o "$RUNNER_TEMP/full.zip"
+          echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/full.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/full.zip" -d "$RUNNER_TEMP/full"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14829075652/zip" -o "$RUNNER_TEMP/redec.zip"
+          echo "1120049b7dd396d7482d7225aabfe36d5cce8e68744466052477c8d0881cce05  $RUNNER_TEMP/redec.zip" | sha256sum --check -
+          unzip -q "$RUNNER_TEMP/redec.zip" -d "$RUNNER_TEMP/redec"
+
+      - name: Join candidate callers, typed field access and exact dispatch slots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib,os,json,re,collections
+          base=pathlib.Path(os.environ["RUNNER_TEMP"])
+          full=base/"full"; redec=base/"redec"; out=base/"out"
+          def readj(p):
+            rows=[]
+            if not p or not p.exists(): return rows
+            with p.open(errors="replace") as f:
+              for line in f:
+                try: rows.append(json.loads(line))
+                except Exception: pass
+            return rows
+          def findfile(name,root=full):
+            return next((p for p in root.rglob(name) if p.is_file()),None)
+          funcs=readj(findfile("functions.jsonl"))
+          edges=readj(findfile("call_edges.jsonl"))
+          fields=readj(findfile("field_accessor_xref.jsonl"))
+          classes=readj(findfile("classes.jsonl"))
+          dispatch=readj(findfile("dispatch_table.jsonl"))
+          typetrack=findfile("typetrack_report.json")
+          bypc={str(x.get("pc","")).lower():x for x in funcs}
+          byname={str(x.get("name","")):x for x in funcs}
+          class_by_id={int(x.get("class_id")):x for x in classes if isinstance(x.get("class_id"),int)}
+          target_pcs=["0x5ad860","0x5ae4dc","0x5ae6d4","0x5ae8dc","0x5afa30","0x5b0750","0x5b0eb0","0x5b13a0","0x5b1f04","0x5b300c","0x5de74c","0x5df4c4","0x5e4368","0x5ee61c","0x5eee50","0x5f203c","0x5f2cc0","0x5f6094","0x7d969c","0x7da31c"]
+          targets={pc:bypc.get(pc,{}) for pc in target_pcs}
+          target_names={str(x.get("name")) for x in targets.values() if x.get("name")}
+          report=["# SOC caller, field-access and dispatch evidence join","","## Dataset counts",f"- functions: {len(funcs)}",f"- call edges: {len(edges)}",f"- field xrefs: {len(fields)}",f"- classes: {len(classes)}",f"- dispatch slots: {len(dispatch)}",f"- target function names: {len(target_names)}"]
+          if typetrack:
+            try:
+              tt=json.loads(typetrack.read_text(errors="replace"))
+              report.append("type-track summary: "+json.dumps(tt,ensure_ascii=False))
+            except Exception: report.append("type-track report parse failed")
+          report += ["","## Candidate function field-access profile"]
+          for pc,f in targets.items():
+            name=str(f.get("name",""))
+            if not name: report.append(f"### {pc}: not found"); continue
+            owned=[x for x in fields if name in x.get("readers",[]) or name in x.get("writers",[])]
+            report.append(f"### {pc} {name} size={f.get('size')} owner={f.get('owner')} field_xrefs={len(owned)}")
+            cids=sorted({int(x.get("class_id")) for x in owned if isinstance(x.get("class_id"),int)})
+            for cid in cids:
+              c=class_by_id.get(cid,{})
+              report.append(f"CLASS {cid} {c.get('class_name')} size={c.get('instance_size')} fields={json.dumps(c.get('fields',[]),ensure_ascii=False)}")
+            for x in owned:
+              report.append("FIELD "+json.dumps(x,ensure_ascii=False))
+          # Reverse edges: show actual resolved callers, including polymorphic Targets.
+          incoming=collections.defaultdict(list)
+          for e in edges:
+            vals=[]
+            if isinstance(e.get("target"),str): vals.append(e["target"])
+            if isinstance(e.get("targets"),list): vals += [x for x in e["targets"] if isinstance(x,str)]
+            for dst in set(vals):
+              if dst in target_names: incoming[dst].append(e)
+          report += ["","## Incoming callers to business candidate functions"]
+          for pc,f in targets.items():
+            name=str(f.get("name",""))
+            if not name: continue
+            rows=incoming.get(name,[])
+            report.append(f"### {pc} {name}: incoming={len(rows)}")
+            for e in rows[:60]: report.append("IN "+json.dumps(e,ensure_ascii=False))
+          # Outgoing indirect calls and their inferred candidates.
+          report += ["","## Outgoing indirect calls from business candidates"]
+          for pc,f in targets.items():
+            name=str(f.get("name",""))
+            if not name: continue
+            rows=[e for e in edges if e.get("from_func")==name and e.get("kind") in ("call_indirect","blr")]
+            report.append(f"### {pc} {name}: indirect={len(rows)}")
+            for e in rows[:80]: report.append("INDIRECT "+json.dumps(e,ensure_ascii=False))
+          # AOTopsy prints the dispatch selector offset in pseudo-code. For x86_64:
+          # selectorCandidates computes class ID = dispatch index - selector offset.
+          function_dir=next((p for p in redec.rglob("functions") if p.is_dir()),None)
+          selector_sites=collections.defaultdict(list)
+          if function_dir:
+            for p in function_dir.glob("*.stdout"):
+              src=p.read_text(errors="replace")
+              for sel in re.findall(r"dispatchCall\s*\(\s*selector\s*:\s*(\d+)",src):
+                selector_sites[int(sel)].append(p.stem)
+          report += ["","## Exact selector-offset to dispatch-slot join"]
+          report.append("This is a CHA candidate set, not a proof of runtime receiver type. Candidate class_id = dispatch_table.index - selector_offset.")
+          for selector,owners in sorted(selector_sites.items()):
+            rows=[]
+            for d in dispatch:
+              idx=d.get("index")
+              if d.get("kind")!="code" or not isinstance(idx,int): continue
+              cid=idx-selector
+              if cid in class_by_id:
+                cl=class_by_id[cid]
+                rows.append({"selector_offset":selector,"class_id":cid,"class_name":cl.get("class_name"),"slot":idx,"target":d.get("target"),"slot_info":d.get("slot_info")})
+            report.append(f"### selector_offset={selector} owners={sorted(set(owners))} candidates={len(rows)}")
+            for row in rows[:120]: report.append("DISPATCH "+json.dumps(row,ensure_ascii=False))
+          # Show dispatch table representation and CLI syntax for any future resolver fix.
+          report += ["","## Dispatch table raw examples"]
+          report += ["JSONL "+json.dumps(x,ensure_ascii=False) for x in dispatch if x.get("kind")=="code" and (x.get("target") or x.get("slot_info"))][:30]
+          for p in redec.rglob("dispatch-table.stdout"):
+            lines=p.read_text(errors="replace").splitlines()
+            report += [f"CLI dispatch-table sample: {p} lines={len(lines)}"]+lines[:80]
+            report += ["CLI code rows"]+[x for x in lines if "code" in x.lower()][:80]
+          (out/"soc-caller-field-dispatch-join.md").write_text("\n".join(report)+"\n")
+          text=(out/"soc-caller-field-dispatch-join.md").read_text()
+          print("REPORT_HEAD\n"+text[:15000])
+          print("REPORT_TAIL\n"+text[-70000:])
+          PY
+          cat "$RUNNER_TEMP/out/soc-caller-field-dispatch-join.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload caller and field-access evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rea-soc-caller-field-dispatch-join-20261123
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 14
