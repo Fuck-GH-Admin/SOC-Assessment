@@ -21,6 +21,14 @@ jobs:
           curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14817228456/zip" -o "$RUNNER_TEMP/full.zip"
           echo "46e071f6f81d14773a5ae2a68feafd440be4b37e4c81c5af9792fb965ea0ea7b  $RUNNER_TEMP/full.zip" | sha256sum --check -
           unzip -q "$RUNNER_TEMP/full.zip" -d "$RUNNER_TEMP/full"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14818715858/zip" -o "$RUNNER_TEMP/deep.zip"
+          echo "9ebc79c2c0f4fb7d61ff2630700ceb95545e0a6eac254cdffb45da2e257e1a04  $RUNNER_TEMP/deep.zip" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/deep"
+          unzip -q "$RUNNER_TEMP/deep.zip" -d "$RUNNER_TEMP/deep"
+          curl --fail --location --retry 4 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/Fuck-GH-Admin/SOC-Assessment/actions/artifacts/14819361192/zip" -o "$RUNNER_TEMP/dossiers.zip"
+          echo "5766881d053c4bede64b510b5c0c477846856921825a5dff19d75d284f7bc3b7  $RUNNER_TEMP/dossiers.zip" | sha256sum --check -
+          mkdir -p "$RUNNER_TEMP/dossiers"
+          unzip -q "$RUNNER_TEMP/dossiers.zip" -d "$RUNNER_TEMP/dossiers"
 
       - name: Resolve business callers, direct call graph, dispatch selectors and both main roots
         shell: bash
@@ -117,6 +125,32 @@ jobs:
           for p in root.rglob("ffi-trace.stdout"):
             s=p.read_text(errors="replace")
             report += [f"## CLI FFI trace {p.relative_to(root)} ({len(s)} chars)",s[:22000]]
+          # Inspect the wider 25-function candidate sweep and preserved SQLite/FFI xrefs.
+          deep=base/"deep"; dossiers=base/"dossiers"
+          cand=next((p for p in deep.rglob("function-candidates.tsv") if p.is_file()),None)
+          if cand:
+            report += ["","## 25-function candidate sweep",cand.read_text(errors="replace")[:12000]]
+          target_dir=next((p for p in deep.rglob("targeted") if p.is_dir()),None)
+          if target_dir:
+            files=sorted(target_dir.glob("candidate-*.stdout"))
+            report += ["",f"## Additional candidate pseudocode: {len(files)} files"]
+            for p in files:
+              src=p.read_text(errors="replace")
+              err=(target_dir/(p.stem+".stderr")).read_text(errors="replace") if (target_dir/(p.stem+".stderr")).exists() else ""
+              if src.strip():
+                report.append(f"### {p.stem}: {len(src.encode())} bytes, {src.count(chr(10))+1} lines")
+                report.append(src[:4200])
+                if len(src)>4200: report.append("Excerpt only; complete output is in the retained artifact.")
+              if err.strip(): report.append("stderr: "+err[:1800].replace("\n"," | "))
+            for p in sorted(target_dir.glob("xref-*.stdout")):
+              report += [f"### {p.name}",p.read_text(errors="replace")[:6000]]
+          strings_dir=next((p for p in dossiers.rglob("strings") if p.is_dir()),None)
+          if strings_dir:
+            report += ["","## Preserved string cross-references"]
+            for p in sorted(strings_dir.glob("*.stdout")):
+              src=p.read_text(errors="replace")
+              if src.strip() and any(k in p.name.lower() for k in ["sqlite","carbon","algorithm","depth","soc","fert","erosion"]):
+                report += [f"### {p.name}",src[:5000]]
           report += ["","## Pipeline output and type-inference diagnostics"]
           for p in sorted(root.rglob("*")):
             if p.is_file() and any(k in p.name.lower() for k in ["typetrack","dispatch_table","selector_dispatch","field_accessor_xref"]):
